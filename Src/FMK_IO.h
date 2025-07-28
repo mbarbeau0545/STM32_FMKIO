@@ -324,7 +324,6 @@
     *
     *
     *	@param[in]      f_signal_e     : the input analog signal, value from @ref t_eFMKIO_InAnaSig
-    *	@param[in]      f_pull_e        : the input pull mode, value from @ref t_eFMKIO_PullMode
     *	@param[in]      f_sigErr_cb     : callbback function that will be called if an error occured,NULL_FUNCTION if not used
     *	 
     *   @retval RC_OK                             @ref RC_OK
@@ -333,8 +332,7 @@
     *
     */
     t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e, 
-                                            t_eFMKIO_PullMode f_pull_e,
-                                            t_cbFMKIO_SigErrorMngmt *f_sigErr_cb);
+                                        t_cbFMKIO_SigErrorMngmt *f_sigErr_cb);
     /**
     *
     *	@brief      Set an input in frequency configuration.\n

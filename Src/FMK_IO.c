@@ -569,13 +569,11 @@ t_eReturnCode FMKIO_Set_InDigSigCfg(t_eFMKIO_InDigSig f_signal_e, t_eFMKIO_PullM
  * FMKIO_Set_InAnaSigCfg
  *********************************/
 t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e, 
-                                    t_eFMKIO_PullMode f_pull_e,
                                     t_cbFMKIO_SigErrorMngmt *f_sigErr_cb)
 {
     t_eReturnCode Ret_e = RC_OK;
 
-    if ((f_signal_e >= FMKIO_INPUT_SIGANA_NB) 
-    ||  (f_pull_e >= FMKIO_PULL_MODE_NB))
+    if (f_signal_e >= FMKIO_INPUT_SIGANA_NB)
     {
         Ret_e = RC_ERROR_PARAM_INVALID;
         ASSERT((t_uint16)Ret_e);
@@ -590,14 +588,13 @@ t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e,
         Ret_e = s_FMKIO_Set_BspSigCfg(c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwGpio_e,
                                       c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwPin_e,
                                       (t_uint32)FMKIO_BSP_MODE_ANALOG,
-                                      f_pull_e,
+                                      FMKIO_PULL_MODE_DISABLE, // no pull resistance in analog
                                       FMKIO_SPD_MODE_LOW, // irrevelent for a input sig dig
                                       FMKIO_AF_UNUSED);
         if (Ret_e == RC_OK)
         { // configure the adc
             Ret_e = FMKCDA_Set_AdcChannelCfg(c_InAnaSigBspMap_as[f_signal_e].adc_e,
-                                             c_InAnaSigBspMap_as[f_signal_e].adcChannel_e,
-                                             FMKCDA_ADC_CFG_SCAN_DMA);
+                                             c_InAnaSigBspMap_as[f_signal_e].adcChannel_e);
 
             if (Ret_e == RC_OK)
             { // update info
