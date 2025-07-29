@@ -601,7 +601,7 @@
     *
     *
     *	@param[in]      f_signal_e       : the input frequency signal, a value from @ref t_eFMKIO_InAnaSig
-    *	@param[in]      f_value_pu16     : storage for value
+    *	@param[in]      f_value_pf32     : storage for value
     *	 
     *   @retval RC_OK                             @ref RC_OK
     *   @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
@@ -611,7 +611,7 @@
     *   @retval RC_ERROR_BUSY                     @ref RC_ERROR_BUSY
     *
     */
-    t_eReturnCode FMKIO_Get_InAnaSigValue(t_eFMKIO_InAnaSig f_signal_e, t_uint16 *f_value_pu16);
+    t_eReturnCode FMKIO_Get_InAnaSigValue(t_eFMKIO_InAnaSig f_signal_e, t_float32 *f_value_pf32);
     /**
     *
     *	@brief      Get the frequency input.\n

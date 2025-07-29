@@ -1724,17 +1724,17 @@ t_eReturnCode FMKIO_Get_InDigSigValue(t_eFMKIO_InDigSig f_signal_e, t_eFMKIO_Dig
 /*********************************
  * s_FMKIO_Get_BspPullMode
  *********************************/
-t_eReturnCode FMKIO_Get_InAnaSigValue(t_eFMKIO_InAnaSig f_signal_e, t_uint16 *f_value_pu16)
+t_eReturnCode FMKIO_Get_InAnaSigValue(t_eFMKIO_InAnaSig f_signal_e, t_float32 *f_value_pf32)
 {
     t_eReturnCode Ret_e = RC_OK;
-    t_uint16 anaValue_16 = 0;
+    t_float32 anaValue_f32 = 0.0f;
 
     if (f_signal_e >= FMKIO_INPUT_SIGANA_NB)
     {
         Ret_e = RC_ERROR_PARAM_INVALID;
         ASSERT((t_uint16)Ret_e);
     }
-    if (f_value_pu16 == (t_uint16 *)NULL)
+    if (f_value_pf32 == (t_float32 *)NULL)
     {
         Ret_e = RC_ERROR_PTR_NULL;
         ASSERT((t_uint16)Ret_e);
@@ -1752,10 +1752,14 @@ t_eReturnCode FMKIO_Get_InAnaSigValue(t_eFMKIO_InAnaSig f_signal_e, t_uint16 *f_
     {
         Ret_e = FMKCDA_Get_AnaChannelMeasure(c_InAnaSigBspMap_as[f_signal_e].adc_e,
                                              c_InAnaSigBspMap_as[f_signal_e].adcChannel_e,
-                                             &anaValue_16);
+                                             &anaValue_f32);
         if(Ret_e == RC_OK)
         {
-            *f_value_pu16 = (t_uint16)anaValue_16;
+            *f_value_pf32 = (t_float32)anaValue_f32;
+        }
+        else 
+        {
+            *f_value_pf32 = 0.0f;
         }
     }
     return Ret_e;
