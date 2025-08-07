@@ -236,7 +236,7 @@
     * 
     *	@param[in]      f_debugInfo1_u8 : Debug Info numero 1
     *                   For Pwm, Ana, Freq this varaible equals to the channel error status 
-    *                   @ref t_eFMKCPU_ChnlErrorState or @ref t_eFMKCDA_ChnlErrState
+    *                   @ref t_eFMKCPU_ChnlErrorState or @ref t_eFMKCDA_AdcErrState
     *	@param[in]      f_debugInfo2_u8 : Debug Info numero 2
     *                   UNUSED for now 
     *                store information for each signals.\n
@@ -623,9 +623,12 @@
                     an interruption is in progress and interruption function is writing in countainer "value".\n
                     If this happens retcode WARNING_BUSY is set and the calcul will be made on saved value.\n
     *               Depending on configuration, this value is either a coutner, a period (ms) or a frequency (Hz)
+    *  @warning     If the system you want to measure as a frequency higher than 10KHz I recommand not to 
+    *               the stm32 can get the frequency from a sensors up to 50 KHz but passed all his time in the interrupt 
+    *               and do nothing.
     *
     *	@param[in]      f_signal_e       : the input frequency signal, a value from @ref t_eFMKIO_InFreqSig
-    *	@param[in]      f_value_pu32     : storage for value
+    *	@param[in]      f_value_pf32     : storage for value
     *	 
     *   @retval RC_OK                             @ref RC_OK
     *   @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
@@ -635,7 +638,7 @@
     *   @retval RC_ERROR_BUSY                     @ref RC_ERROR_BUSY
     *
     */
-    t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_uint32 *f_value_pu32);
+    t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 *f_value_pf32);
     /**
     *
     *	@brief      Update the dutyCycle for a PWM.\n
@@ -729,7 +732,7 @@
     *   @retval RC_ERROR_BUSY                     @ref RC_ERROR_BUSY
     *
     */
-    t_eReturnCode FMKIO_Get_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint32 * f_frequency_pu32);
+    t_eReturnCode FMKIO_Get_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_float32 * f_frequency_pf32);
     /**
     *
     *	@brief      Get the digital output.\n
