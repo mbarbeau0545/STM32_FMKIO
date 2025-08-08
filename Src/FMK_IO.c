@@ -1860,7 +1860,11 @@ t_eReturnCode FMKIO_Get_InAnaSigValue(t_eFMKIO_InAnaSig f_signal_e, t_float32 *f
         else 
         {
             *f_value_pf32 = 0.0f;
-            ASSERT((t_uint16)Ret_e);
+
+            if(Ret_e < RC_OK)
+            {
+                ASSERT((t_uint16)Ret_e);
+            }
         }
     }
     return Ret_e;
