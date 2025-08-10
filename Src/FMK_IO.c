@@ -24,7 +24,7 @@
 // ********************************************************************
 #define FMKIO_RAMP_UNUSED ((t_uint8)0xFF)
 #define FMKIO_PID_UNUSED  ((t_uint8)0xFF)
-#define FMKIO_AF_UNUSED   ((t_uint8)0xFF) /**< Flag to say that the alternate function is not used in Signal Init */
+
 // ********************************************************************
 // *                      Types
 // ********************************************************************
@@ -264,7 +264,9 @@ static t_eReturnCode s_FMKIO_MngSigPwmWaveForm( t_eFMKIO_OutPwmSig f_signal_e,
  *
  */
 static void s_FMKIO_basicAdvTimerCallback(t_eFMKTIM_InterruptLineType f_InterruptType_e, t_uint8 f_InterruptLine_u8);
+#ifdef APPSYS_MODULE_FMKHRT_ENABLE
 static void s_FMKIO_HighResTimerCallback(t_eFMKHRT_HighResLine f_HrLine_e, t_eFMKHRT_HrLineEvntCb f_Evnt_e);
+#endif // APPSYS_MODULE_FMKHRT_ENABLE
 /**
  *
  *	@brief      Function to set HAL_RCC clock state : Enable/Disable
