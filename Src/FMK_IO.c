@@ -56,7 +56,7 @@ typedef struct
 typedef struct 
 {
     t_bool IsSigConfigured_b;                   /**< Flag which indicate wether or not the signal has been configured */
-    t_uint32 frequencyReq_u32;
+    t_float32 frequencyReq_f32;
     t_uint16 reqDutycycle_u16;
     t_uint8 rampId_u8;
     t_uint8 pidId_u8;
@@ -74,6 +74,7 @@ typedef struct
     t_eFMKIO_FreqMeas meas_e;               /**< Frequency measuremnt mode (counter/ freq/Period) */
     t_eFMKIO_SigTrigCptr edgeTrig_e;        /**< save the configuration that trigger the computation */
     t_uint32 value_u32;                     /**< the difference between the last and current capture on channel */
+    t_uint8 exceedCnt_u8;                    /**< Before change the ffrequency to adapt the Capture, we ensure that this is not noise  */
     t_float32 timFreqHzVal_f32;              /**< Timer frequency value */
     t_uint32 lastCaptureVal_u32;            /**< Last CCRx value */
     t_uint32 TimARRValue_u32;               /**<  Timer ARR register value for frequency computation */
@@ -250,7 +251,7 @@ static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_Inter
  */
 static t_eReturnCode s_FMKIO_MngSigPwmWaveForm( t_eFMKIO_OutPwmSig f_signal_e,
                                                 t_uint16 * f_dutyCycle_pu16,
-                                                t_uint32 * f_frequency_pu32,
+                                                t_float32 * f_frequency_pf32,
                                                 t_uint32 * f_pulses_pu32);
 /**
  *
@@ -297,15 +298,6 @@ static t_eReturnCode s_FMKIO_Operational(void);
  * @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
  *
  */
-static t_eReturnCode s_FMKIO_SigFreqCalibOpe(void);
-/**
- *
- *	@brief      Function to perform diag on siganl used 
- *
- * @retval RC_OK                             @ref RC_OK
- * @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
- *
- */
 static t_eReturnCode s_FMKIO_PreOperational(void);
 /**
  *
@@ -341,26 +333,24 @@ t_eReturnCode FMKIO_Init(void)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_uint8 LLI_u8;
-    t_uint8 idxBspPin_u8;
     GPIO_TypeDef * bspGpio_ps;
+    GPIO_InitTypeDef bspGpioInit_s;
 
+    //---put every gpio in analog cfg to reduce consumption 
+    //      and noise ----//
+    bspGpioInit_s.Mode = FMKIO_BSP_MODE_ANALOG;
+    bspGpioInit_s.Pull = GPIO_NOPULL;
+    bspGpioInit_s.Pin = GPIO_PIN_All;
     
     //--------- Gpio clock port status ---------//
     for(LLI_u8 = (t_uint8)0; LLI_u8 < FMKIO_GPIO_PORT_NB ; LLI_u8++)
     {
         g_IsGpioClockEnable_ae[LLI_u8] = FMKCPU_CLOCKPORT_OPE_DISABLE;
 
-        // set all pin to 0 to avoid random output voltage ----//
-        for(idxBspPin_u8 = (t_uint8)0 ; idxBspPin_u8 < FMKIO_GPIO_PIN_NB ; idxBspPin_u8++)
+        Ret_e = FMKIO_Get_BspGpioPort((t_eFMKIO_GpioPort)LLI_u8, &bspGpio_ps);
+        if(Ret_e == RC_OK)
         {
-            Ret_e = FMKIO_Get_BspGpioPort((t_eFMKIO_GpioPort)LLI_u8, &bspGpio_ps);
-
-            if(Ret_e == RC_OK)
-            {
-                HAL_GPIO_WritePin(  bspGpio_ps,
-                                    c_BspPinMapping_ua16[idxBspPin_u8],
-                                    GPIO_PIN_RESET);
-            }
+            HAL_GPIO_Init(bspGpio_ps, &bspGpioInit_s);
         }
     }
 
@@ -370,8 +360,9 @@ t_eReturnCode FMKIO_Init(void)
         g_InFreqSigInfo_as[LLI_u8].meas_e = FMKIO_FREQ_MEAS_NB;
         g_InFreqSigInfo_as[LLI_u8].edgeTrig_e = FMKIO_STC_NB;
         g_InFreqSigInfo_as[LLI_u8].IsSigConfigured_b   = False;
-        g_InFreqSigInfo_as[LLI_u8].isSigCalib_b        = False;
+        g_InFreqSigInfo_as[LLI_u8].isSigCalib_b        = TRUE;
         g_InFreqSigInfo_as[LLI_u8].value_u32           = (t_uint32)0;
+        g_InFreqSigInfo_as[LLI_u8].exceedCnt_u8         = (t_uint8)0;
         g_InFreqSigInfo_as[LLI_u8].lastCaptureVal_u32  = (t_uint32)0;
         g_InFreqSigInfo_as[LLI_u8].sigError_cb = (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION;
 
@@ -409,8 +400,8 @@ t_eReturnCode FMKIO_Init(void)
     for(LLI_u8 = (t_uint8)0 ; LLI_u8 < (t_uint8)FMKIO_OUTPUT_SIGPWM_NB ; LLI_u8++)
     {
         g_OutPwmSigInfo_as[LLI_u8].IsSigConfigured_b   = False;
-        g_OutPwmSigInfo_as[LLI_u8].frequencyReq_u32   = (t_uint32)0;
-        g_OutPwmSigInfo_as[LLI_u8].reqDutycycle_u16   = (t_uint16)0;
+        g_OutPwmSigInfo_as[LLI_u8].frequencyReq_f32   = (t_uint32)0;
+        g_OutPwmSigInfo_as[LLI_u8].reqDutycycle_u16   = (t_float32)0;
         g_OutPwmSigInfo_as[LLI_u8].rampId_u8 = (t_uint8)FMKIO_RAMP_UNUSED;
         g_OutPwmSigInfo_as[LLI_u8].pidId_u8 = (t_uint8)FMKIO_PID_UNUSED;
         g_OutPwmSigInfo_as[LLI_u8].sigError_cb = (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION;
@@ -630,6 +621,7 @@ t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e,
 t_eReturnCode FMKIO_Set_InFreqSigCfg(   t_eFMKIO_InFreqSig f_signal_e, 
                                         t_eFMKIO_SigTrigCptr f_trigger_e,
                                         t_eFMKIO_FreqMeas f_freqMeas_e,
+                                        t_float32 f_samplingHz_f32,
                                         t_cbFMKIO_SigErrorMngmt *f_sigErr_cb)
 {
     t_eReturnCode Ret_e = RC_OK;
@@ -681,6 +673,7 @@ t_eReturnCode FMKIO_Set_InFreqSigCfg(   t_eFMKIO_InFreqSig f_signal_e,
             // get the FMKTIM channel meas corresponding to f_trigger_e
             Ret_e = FMKTIM_Set_ICLineCfg(ITLineIO_e,
                                         cpu_trigger_e,
+                                        f_samplingHz_f32,
                                         (t_cbFMKTIM_InterruptLine *)s_FMKIO_MngSigFrequency);
         }
         if (Ret_e == RC_OK)
@@ -951,7 +944,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
             }
 
             Ret_e = FMKTIM_Set_PWMLineCfg(  (t_eFMKTIM_InterruptLineIO)ITLineIO_u8, 
-                                            f_sigPwmCfg_s.frequency_u32,
+                                            f_sigPwmCfg_s.frequency_f32,
                                             bscadvPolarity_e,
                                             s_FMKIO_basicAdvTimerCallback);
         }
@@ -959,7 +952,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
         {
             
             pwmCfg_s.deadTime_u32 = f_sigPwmCfg_s.deadTime_u32;
-            pwmCfg_s.frequency_u32 = f_sigPwmCfg_s.frequency_u32;
+            pwmCfg_s.frequency_f32 = f_sigPwmCfg_s.frequency_f32;
 
             if(f_sigPwmCfg_s.polarity_e == FMKIO_SIGPWM_POLARITY_HIGH)
             {
@@ -1012,7 +1005,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
             g_OutPwmSigInfo_as[f_signal_e].IsSigConfigured_b = (t_bool)True;
             g_OutPwmSigInfo_as[f_signal_e].sigError_cb = f_sigErr_cb;
             g_OutPwmSigInfo_as[f_signal_e].pulseEvnt_pcb = f_pulseEvnt_pcb;
-            g_OutPwmSigInfo_as[f_signal_e].frequencyReq_u32 = (t_uint32)f_sigPwmCfg_s.frequency_u32;
+            g_OutPwmSigInfo_as[f_signal_e].frequencyReq_f32 = (t_uint32)f_sigPwmCfg_s.frequency_f32;
             g_OutPwmSigInfo_as[f_signal_e].ctrlType_e = f_sigCtrlPrm_s.ctrlType_e;
         }
         else 
@@ -1283,7 +1276,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigDutyCycle(t_eFMKIO_OutPwmSig f_signal_e, t_uint
             //---- Make the output change now ----//
             Ret_e = s_FMKIO_MngSigPwmWaveForm(  f_signal_e,
                                                 (&f_dutyCycle_u16),
-                                                (t_uint32 *)NULL,
+                                                (t_float32 *)NULL,
                                                 (t_uint32 *)NULL);
 
             if(Ret_e == RC_OK)
@@ -1307,7 +1300,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigDutyCycle(t_eFMKIO_OutPwmSig f_signal_e, t_uint
 /*********************************
  * FMKIO_Set_OutPwmSigFrequency
  *********************************/
-t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint32 f_frequency_u32)
+t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_float32 f_frequency_f32)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_sFMKIO_PwmSigInfo pwmSigInfo_s;
@@ -1331,7 +1324,8 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint
         Ret_e = SMB_Read(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
         if (Ret_e == RC_OK)
         {
-            if (pwmSigInfo_s.frequencyReq_u32 == f_frequency_u32)
+            if ((pwmSigInfo_s.frequencyReq_f32 <  (f_frequency_f32 + 0.2))
+            && (pwmSigInfo_s.frequencyReq_f32 >  (f_frequency_f32 - 0.2)))
             {
                 Ret_e = RC_WARNING_NO_OPERATION;
             }
@@ -1347,7 +1341,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint
                                                         APPSYS_FAST_TASK_ENABLE);
                         if (Ret_e == RC_OK)
                         {
-                            pwmSigInfo_s.frequencyReq_u32 = f_frequency_u32;
+                            pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
                         }
                         else
                         {
@@ -1356,7 +1350,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint
                     }
                     else
                     {
-                        pwmSigInfo_s.frequencyReq_u32 = f_frequency_u32;
+                        pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
                     }
                 }
                 else
@@ -1364,11 +1358,11 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint
                     //---- Make the output change now ----//
                     Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
                                                       (t_uint16 *)(&pwmSigInfo_s.reqDutycycle_u16),
-                                                      (t_uint32 *)(&f_frequency_u32),
+                                                      (t_float32 *)(&f_frequency_f32),
                                                       (t_uint32 *)NULL);
                     if (Ret_e == RC_OK)
                     {
-                        pwmSigInfo_s.frequencyReq_u32 = f_frequency_u32;
+                        pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
                     }
                 }
 
@@ -1392,7 +1386,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint
  * FMKIO_Set_OutPwmSigPulses
  *********************************/
 t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e, 
-                                        t_uint32 f_frequency_f32,
+                                        t_float32 f_frequency_f32,
                                         t_uint16 f_dutyCycle_u16,
                                         t_uint16 f_pulses_u16)
 {
@@ -1439,7 +1433,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
                 reqFastTaskON_b = True;
                 Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
                                                   &pwmSigInfo_s.reqDutycycle_u16,
-                                                  (t_uint32 *)&f_frequency_f32,
+                                                  (t_float32 *)&f_frequency_f32,
                                                   (t_uint32 *)&f_pulses_u16);
             }
             // PWM Ctrl Type : Frequency
@@ -1448,7 +1442,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
                 reqFastTaskON_b = True;
                 Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
                                                   &f_dutyCycle_u16,
-                                                  &pwmSigInfo_s.frequencyReq_u32,
+                                                  &pwmSigInfo_s.frequencyReq_f32,
                                                   (t_uint32 *)&f_pulses_u16);
             }
             // Aucun ctrlType actif
@@ -1462,7 +1456,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
 
             if (Ret_e == RC_OK)
             {
-                pwmSigInfo_s.frequencyReq_u32 = f_frequency_f32;
+                pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
                 pwmSigInfo_s.reqDutycycle_u16 = f_dutyCycle_u16;
 
                 Ret_e = SMB_Write(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
@@ -1477,6 +1471,8 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
                                                 APPSYS_FAST_TASK_ENABLE);
             }
         }
+
+        //---- no ramp capabilities on Pwm Advance Timer ----//
         else if (timOrgn_e == FMKIO_ITLINE_TYPE_ADVTIM)
         {
             Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
@@ -1882,7 +1878,6 @@ t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 
     t_uint32 value_u32 = (t_uint32)0;
     t_uint32 arrTim_u32 = (t_uint32)0;
     t_float32 timFreqHz_f32 = (t_float32)0.f;
-    t_uint8 factor_u8 = (t_uint8)1;
 
     if (f_signal_e >= FMKIO_INPUT_SIGFREQ_NB)
     {
@@ -1940,13 +1935,10 @@ t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 
                 break;
 
             case FMKIO_FREQ_MEAS_PERIOD:
-                if(freqSigInfo_s.edgeTrig_e == FMKIO_STC_BOTH_EDGE)
-                {
-                    factor_u8 = (t_uint8)2;
-                }
                 if (arrTim_u32 > 0)
                 {
-                    *f_value_pf32 = (t_float32)((t_float32)((t_float32)factor_u8 * value_u32) / (t_float32)arrTim_u32);
+                    *f_value_pf32 = (t_float32)((t_float32)((t_float32)value_u32) 
+                                                            / (t_float32)(arrTim_u32 * timFreqHz_f32));
                 }
                 else
                 {
@@ -1955,17 +1947,13 @@ t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 
                 break;
 
             case FMKIO_FREQ_MEAS_FREQ:
-                if(freqSigInfo_s.edgeTrig_e == FMKIO_STC_BOTH_EDGE)
-                {
-                    factor_u8 = (t_uint8)2;
-                }
                 //--- no division by 0 but not overload with compution 
                 //          whenever value is 0 and will give 0 at the end ----//
                 if (value_u32 > (t_uint32)0
                 && (arrTim_u32 > (t_uint32)0))
                 {
                     *f_value_pf32 = (t_float32)((t_float32)arrTim_u32 
-                                                / (t_float32)((t_float32)factor_u8 * value_u32)
+                                                / (t_float32)((t_float32)value_u32)
                                                 * (t_float32)timFreqHz_f32);
                 }
                 else
@@ -2142,8 +2130,6 @@ static t_eReturnCode s_FMKIO_Operational(void)
         s_SavedTime_u32 = currentTime_u32;
         Ret_e = s_FMKIO_PerformDiagnostic();
     }
-
-    Ret_e = s_FMKIO_SigFreqCalibOpe();
     
     return Ret_e;
 }
@@ -2232,139 +2218,6 @@ static t_eReturnCode s_FMKIO_PerformDiagnostic(void)
 }
 
 /*********************************
- * s_FMKIO_SigFreqCalibOpe
- *********************************/
-static t_eReturnCode s_FMKIO_SigFreqCalibOpe(void)
-{
-    static t_bool s_performFreqLogic_b = True;
-    t_eReturnCode Ret_e = RC_OK;
-    t_uint8 idxFreq_u8;
-    t_uint32 multiplierFreq_u32;
-    t_eFMKTIM_InterruptLineIO freqLine_e;
-    t_sFMKTIM_ICOpe ICOpe_s;
-    t_sFMKTIM_ICValue ICValue_s;
-    t_uint8 maskOpe_u8 = (t_uint8)0;
-    t_sFMKIO_InFreqSigInfo freqSigInfo_s;
-
-    if (s_performFreqLogic_b == True)
-    {
-        s_performFreqLogic_b = False;
-
-        for (idxFreq_u8 = 0; idxFreq_u8 < FMKIO_INPUT_SIGFREQ_NB; idxFreq_u8++)
-        {
-            // Lecture sécurisée de la structure de fréquence
-            Ret_e = SMB_Read(&g_sfmb_FreqInfo_as[idxFreq_u8], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
-            if (Ret_e != RC_OK)
-            {
-                ASSERT((t_uint16)Ret_e);
-                return Ret_e;
-            }
-
-            if (freqSigInfo_s.IsSigConfigured_b == True)
-            {
-                s_performFreqLogic_b = True;
-
-                switch (freqSigInfo_s.meas_e)
-                {
-                    case FMKIO_FREQ_MEAS_FREQ:
-                    case FMKIO_FREQ_MEAS_PERIOD:
-                    {
-                        freqSigInfo_s.isSigCalib_b = True;
-                        Ret_e = SMB_Write(&g_sfmb_FreqInfo_as[idxFreq_u8], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
-
-                        if ((freqSigInfo_s.value_u32 < (t_uint32)FMKIO_FREQ_MIN_CC_VALUE)
-                            && (freqSigInfo_s.value_u32 > 0))
-                        {
-                            multiplierFreq_u32 = (t_uint32)((t_float32)(FMKIO_FREQ_MIN_CC_VALUE /
-                                                        (t_float32)freqSigInfo_s.value_u32));
-
-                            if (multiplierFreq_u32 < 2)
-                            {
-                                multiplierFreq_u32 = 2;
-                            }
-
-                            freqLine_e = (t_eFMKTIM_InterruptLineIO)c_InFreqSigBspMap_as[idxFreq_u8].ITLine_u8;
-                            SETBIT_8B(maskOpe_u8, FMKTIM_BIT_IC_FREQUENCY);
-
-                            ICOpe_s.frequency_u32 = (t_uint32)(freqSigInfo_s.timFreqHzVal_f32 *
-                                                                multiplierFreq_u32);
-                            
-                            Ret_e = FMKTIM_Set_ICLineValue(freqLine_e, ICOpe_s, maskOpe_u8);
-                            if (Ret_e == RC_OK)
-                            {
-                                maskOpe_u8 = (t_uint8)0;
-                                SETBIT_8B(maskOpe_u8, FMKTIM_BIT_IC_ARR_REGISTER);
-                                SETBIT_8B(maskOpe_u8, FMKTIM_BIT_IC_FREQUENCY);
-
-                                Ret_e = FMKTIM_Get_ICLineValue(     freqLine_e,
-                                                                    &ICValue_s,
-                                                                    maskOpe_u8);
-                            }
-                            if(Ret_e == RC_OK)
-                            {
-                                // Mise à jour locale
-                                freqSigInfo_s.TimARRValue_u32 = ICValue_s.ARR_Register_u32;
-                                freqSigInfo_s.timFreqHzVal_f32 = (t_float32)ICValue_s.frequency_f32;
-
-                                // Écriture sécurisée de la structure mise à jour
-                                FMKSRL_LOG("Update timer frequency to %d\r\n", (t_uint32)ICValue_s.frequency_f32);
-                                Ret_e = SMB_Write(&g_sfmb_FreqInfo_as[idxFreq_u8], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
-                                if (Ret_e != RC_OK)
-                                {
-                                    ASSERT((t_uint16)Ret_e);
-                                    return Ret_e;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (freqSigInfo_s.isSigCalib_b == False)
-                            {
-                                freqSigInfo_s.isSigCalib_b = True;
-
-                                // Écriture sécurisée pour mise à jour du flag
-                                Ret_e = SMB_Write(&g_sfmb_FreqInfo_as[idxFreq_u8], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
-                                if (Ret_e != RC_OK)
-                                {
-                                    ASSERT((t_uint16)Ret_e);
-                                    return Ret_e;
-                                }
-                            }
-                            Ret_e = RC_OK;
-                        }
-                    }
-                    break;
-
-                    case FMKIO_FREQ_MEAS_COUNT:
-                    {
-                        if (freqSigInfo_s.isSigCalib_b == False)
-                        {
-                            freqSigInfo_s.isSigCalib_b = True;
-
-                            Ret_e = SMB_Write(&g_sfmb_FreqInfo_as[idxFreq_u8], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
-                            if (Ret_e != RC_OK)
-                            {
-                                ASSERT((t_uint16)Ret_e);
-                                return Ret_e;
-                            }
-                        }
-                        Ret_e = RC_OK;
-                    }
-                    break;
-
-                    case FMKIO_FREQ_MEAS_NB:
-                    default:
-                    {
-                        Ret_e = RC_WARNING_NO_OPERATION;
-                    }
-                }
-            }
-        }
-    }
-
-    return Ret_e;
-}
-/*********************************
  * s_FMKIO_Get_EcdrTimerMode
  *********************************/
 static t_eReturnCode s_FMKIO_Get_EcdrTimerMode(t_eFMKIO_EcdrStartOpe f_StartOpeMode_e, t_eFMKTIM_EcdrOpe * f_EdrTimerOpe_pe)
@@ -2439,7 +2292,6 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_float32 computeRampVal_f32;
-    t_uint32 computeFreq_u32;
     t_uint16 computeDc_u16;
     t_uint8 idxSigPwm_u8;
     t_sFMKIO_PwmSigInfo pwmSigInfo_s;
@@ -2459,21 +2311,21 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void)
         if (pwmSigInfo_s.ctrlType_e == FMKIO_PWM_CTRL_TYPE_FREQ)
         {
             Ret_e = LIBRamp_Compute(pwmSigInfo_s.rampId_u8,
-                                   (t_float32)pwmSigInfo_s.frequencyReq_u32,
+                                   (t_float32)pwmSigInfo_s.frequencyReq_f32,
                                    &computeRampVal_f32);
             if (Ret_e == RC_OK)
             {
-                computeFreq_u32 = (t_uint32)computeRampVal_f32;
                 Ret_e = s_FMKIO_MngSigPwmWaveForm((t_eFMKIO_OutPwmSig)idxSigPwm_u8,
                                                   &pwmSigInfo_s.reqDutycycle_u16,
-                                                  &computeFreq_u32,
+                                                  &computeRampVal_f32,
                                                   NULL);
             }
             if (Ret_e != RC_OK)
             {
                 ASSERT((t_uint16)Ret_e);
             }
-            if (pwmSigInfo_s.frequencyReq_u32 != (t_uint32)computeRampVal_f32)
+            if ((pwmSigInfo_s.frequencyReq_f32 < (t_uint32)(computeRampVal_f32 + 0.2))
+            && (pwmSigInfo_s.frequencyReq_f32 > (t_uint32)(computeRampVal_f32 - 0.2)))
             {
                 SETBIT_8B(mskPwmActivity_u32, idxSigPwm_u8);
             }
@@ -2676,18 +2528,15 @@ static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_Inter
                         {
                             captureDifference_u32 = currentCapture_u32 - lastCapture_u32;
                         }
+                    }
 
-                        freqSigInfo_s.value_u32 = captureDifference_u32;
-                        freqSigInfo_s.lastCaptureVal_u32 = currentCapture_u32;
-                        //FMKSRL_LOG("delta capture value %d\r\n", captureDifference_u32);
-
-                        // Sauvegarder la structure modifiée
-                        Ret_e = SMB_Write(&g_sfmb_FreqInfo_as[freqSig_e], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
-                        if (Ret_e != RC_OK)
-                        {
-                            ASSERT((t_uint16)Ret_e);
-                            return Ret_e;
-                        }
+                    freqSigInfo_s.value_u32 = captureDifference_u32;
+                    freqSigInfo_s.lastCaptureVal_u32 = currentCapture_u32;
+            
+                    if (Ret_e < RC_OK)
+                    {
+                        ASSERT((t_uint16)Ret_e);
+                        return Ret_e;
                     }
                     break;
 
@@ -2706,6 +2555,10 @@ static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_Inter
         {
             ASSERT((t_uint16)Ret_e);
         }
+        else 
+        {
+            Ret_e = SMB_Write(&g_sfmb_FreqInfo_as[freqSig_e], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
+        }
     }
 
     return Ret_e;
@@ -2716,7 +2569,7 @@ static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_Inter
  *********************************/
 static t_eReturnCode s_FMKIO_MngSigPwmWaveForm( t_eFMKIO_OutPwmSig f_signal_e,
                                                 t_uint16 * f_dutyCycle_pu16,
-                                                t_uint32 * f_frequency_pu32,
+                                                t_float32 * f_frequency_pf32,
                                                 t_uint32 * f_pulses_pu32)
 {
     t_eReturnCode Ret_e = RC_OK;
@@ -2734,7 +2587,7 @@ static t_eReturnCode s_FMKIO_MngSigPwmWaveForm( t_eFMKIO_OutPwmSig f_signal_e,
     {
         //---- set to default info ----//
         pwmTimOpe_s.dutyCycle_u16 = (t_uint16)0;
-        pwmTimOpe_s.frequency_u32 = (t_uint32)0;
+        pwmTimOpe_s.frequency_f32 = (t_uint32)0;
         pwmTimOpe_s.nbPulses_u16 = (t_uint16)0;
 
         if(f_dutyCycle_pu16 != (t_uint16 *)NULL)
@@ -2742,9 +2595,9 @@ static t_eReturnCode s_FMKIO_MngSigPwmWaveForm( t_eFMKIO_OutPwmSig f_signal_e,
             pwmTimOpe_s.dutyCycle_u16 = (t_uint16)(*f_dutyCycle_pu16);
             SETBIT_8B(maskUpdate_u8, FMKTIM_BIT_PWM_DUTYCYCLE);
         }
-        if(f_frequency_pu32 != (t_uint32 *)NULL)
+        if(f_frequency_pf32 != (t_float32 *)NULL)
         {
-            pwmTimOpe_s.frequency_u32 = (t_uint32)(*f_frequency_pu32);
+            pwmTimOpe_s.frequency_f32 = (t_float32)(*f_frequency_pf32);
             SETBIT_8B(maskUpdate_u8, FMKTIM_BIT_PWM_FREQUENCY);
         }
         if(f_pulses_pu32 != (t_uint32 *)NULL)
@@ -2769,9 +2622,10 @@ static t_eReturnCode s_FMKIO_MngSigPwmWaveForm( t_eFMKIO_OutPwmSig f_signal_e,
             pwmHrTImOpe_s.dutyCycle_u16 = (t_uint16)(*f_dutyCycle_pu16);
             SETBIT_8B(maskUpdate_u8, FMKHRT_BIT_PWM_DUTYCYCLE);
         }
-        if(f_frequency_pu32 != (t_uint32 *)NULL)
+        if(f_frequency_pf32 != (t_float32 *)NULL)
         {
-            pwmHrTImOpe_s.frequency_f32 = (t_uint32)(*f_frequency_pu32);
+            //--- her ewe cast no matter what'cause FMK_HRT does not allowed freq < 1 ----//
+            pwmHrTImOpe_s.frequency_f32 = (t_float32)(*f_frequency_pf32);
             SETBIT_8B(maskUpdate_u8, FMKHRT_BIT_PWM_FREQUENCY);
         }
         if(f_pulses_pu32 != (t_uint32 *)NULL)

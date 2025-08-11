@@ -179,7 +179,7 @@
     */
    typedef struct 
     {
-        t_uint32 frequency_u32;                 /**< Start frequency of the Pwm */
+        t_float32 frequency_f32;                 /**< Start frequency of the Pwm */
         t_eFMKIO_SpdMode spdMode_e;             /**< Output Speed Mode (advise -> high) */
         t_eFMKIO_PullMode pullMode_e;           /**< Output pull mode (Gnd or  Vcc and output is off) */
         t_eFMKIO_SigPwmPolarity polarity_e;     /**< Polarity of the Pwm */
@@ -338,23 +338,32 @@
     *	@brief      Set an input in frequency configuration.\n
     *	@note       Allow the user to choose among frequencies inputs.\n 
     *               This function configure bspInit , call HAL_function,
-    *               call FMKCPU to configure a timer in order to convert a digital signal
-    *               into a frequency.\n
+    *               call FMKTIM to configure a timer in order to convert a digital signal
+    *               into a frequency.\n A callback is set, every f_trigger_e, we reach the CCRx register
+    *               and substract it to the previous value. In order to get a frequency we do 
+    *               
+    *               Freq = timer_ARR / DiffCapture * timerFreqHz
+    *               
+    *               Where timerFreqHz is f_samplingHz_f32. To set the righ value 
+    *               basically take the min value you think you will get and divide this number by two 
+    *               (Shannon), according test, if f_samplingHz_f32 > 4, you get the right freq +- 3% until 10000KHz input.\n
     *
     *
-    *	@param[in]      f_signal_e     : the input frequency signal, a value from @ref t_eFMKIO_InFreqSig
-    *	@param[in]      f_freqMeas_e    : the input pull mode, value from @ref t_eFMKIO_FreqMeas
-    *	@param[in]      f_sigErr_cb     : callbback function that will be called if an error occured
+    *	@param[in]      f_signal_e              : the input frequency signal, a value from @ref t_eFMKIO_InFreqSig
+    *	@param[in]      f_freqMeas_e            : the input pull mode, value from @ref t_eFMKIO_FreqMeas
+    *	@param[in]      f_sigErr_cb             : callbback function that will be called if an error occured
+    *   @param[in]      f_samplingHz_f32        : 
     *	 
     *   @retval RC_OK                             @ref RC_OK
     *   @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
     *   @retval RC_ERROR_ALREADY_CONFIGURED       @ref RC_ERROR_ALREADY_CONFIGURED
     *
     */
-    t_eReturnCode FMKIO_Set_InFreqSigCfg(t_eFMKIO_InFreqSig f_signal_e, 
-                                            t_eFMKIO_SigTrigCptr f_trigger_e,
-                                            t_eFMKIO_FreqMeas f_freqMeas_e,
-                                            t_cbFMKIO_SigErrorMngmt *f_sigErr_cb);
+    t_eReturnCode FMKIO_Set_InFreqSigCfg(   t_eFMKIO_InFreqSig f_signal_e, 
+                                        t_eFMKIO_SigTrigCptr f_trigger_e,
+                                        t_eFMKIO_FreqMeas f_freqMeas_e,
+                                        t_float32 f_samplingHz_f32,
+                                        t_cbFMKIO_SigErrorMngmt *f_sigErr_cb);
     /**
     *
     *	@brief      Set an intput in event configuration.\n
@@ -663,10 +672,10 @@
     *	@note       Once the configuration is done, this function update the dutycyle of 
     *               the pwm. if the PWM is not started yet the framework automatically set ON the channel
     *               if the dutyCycle is set to 0 that will shut down the pulse generation.\n 
-    *
+    *   @warning    Check @ref FMKTIM_SetPwmLineOpe for Restriction, and @ref FMKHRT_SetPwmLineOpe
     *
     *	@param[in]      f_signal_e        : the input pwm signal, a value from @ref t_eFMKIO_OutPwmSig
-    *	@param[in]      f_frequency_u16   : the frequency, value between 0 (0%) - 1000 (100%)
+    *	@param[in]      f_frequency_u16   : the frequency
     *	 
     *   @retval RC_OK                             @ref RC_OK
     *   @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
@@ -674,7 +683,7 @@
     *   @retval RC_ERROR_BUSY                     @ref RC_ERROR_BUSY
     *
     */
-    t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_uint32 f_frequency_u32);
+    t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_float32 f_frequency_f32);
             /**
     *
     *	@brief      Update the dutyCycle for a PWM.\n
@@ -694,7 +703,7 @@
     *
     */
     t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e, 
-                                            t_uint32 f_frequency_f32,
+                                            t_float32 f_frequency_f32,
                                             t_uint16 f_dutyCycle_u16,
                                             t_uint16 f_pulses_u16);
         /**
