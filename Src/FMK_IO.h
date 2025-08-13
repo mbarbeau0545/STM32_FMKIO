@@ -214,7 +214,7 @@
     *                store information for each signals.\n
     *
     */
-    typedef void (t_cbFMKIO_EventFunc)(void);
+    typedef void (t_cbFMKIO_EventFunc)(t_eFMKIO_InEvntSig f_EvntSig_e);
     /**
     *
     *	@brief      This function is a callback function for event signal.\n
