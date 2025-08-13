@@ -20,7 +20,7 @@
     // ********************************************************************
     // *                      Defines
     // ********************************************************************
-    #ifdef FMKCPU_STM32_ECU_FAMILY_G
+    #ifdef FMKCPU_STM32_ECU_FAMILY_G4
         #define FMKIO_BSP_MODE_INPUT ((t_uint32)GPIO_MODE_INPUT)
         #define FMKIO_BSP_MODE_ANALOG ((t_uint32)GPIO_MODE_ANALOG)
     #elif FMKCPU_STM32_ECU_FAMILY_F
