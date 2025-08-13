@@ -2963,7 +2963,7 @@ void FMKIO_BspRqst_InterruptMngmt(void)
                 {
                     g_lastTick_ua32[LLI_u8] = currentTick_u32;
                     __HAL_GPIO_EXTI_CLEAR_IT(bspPin_u16);
-                    g_InEvntSigInfo_as[LLI_u8].EvntFunc_cb();
+                    g_InEvntSigInfo_as[LLI_u8].EvntFunc_cb((t_eFMKIO_InEvntSig)LLI_u8);
                 }
             }
         }
