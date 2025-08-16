@@ -55,14 +55,13 @@ typedef struct
 /**< Structure common to all Pwm signal to repertory signal information */
 typedef struct 
 {
-    t_bool IsSigConfigured_b;                   /**< Flag which indicate wether or not the signal has been configured */
-    t_float32 frequencyReq_f32;
-    t_uint16 reqDutycycle_u16;
-    t_uint8 rampId_u8;
-    t_uint8 pidId_u8;
-    t_eFMKIO_PwmCtrlType ctrlType_e;
-    t_cbFMKIO_PulseEvent    * pulseEvnt_pcb;      /**< callback function when a pulse is finihed if pwm pulse is set  */
-    t_cbFMKIO_SigErrorMngmt * sigError_cb;      /**< callback function if an error occured  */
+    t_bool IsSigConfigured_b;                       /**< Flag which indicate wether or not the signal has been configured */
+    t_float32 frequencyReq_f32;                     /**< Freqnuency request by the user */
+    t_uint16 reqDutycycle_u16;                      /**< Duty cycle request by the user */
+    t_uint8 rampId_u8;                              /**< Ramp Id for computation */
+    t_eFMKIO_PwmCtrlType ctrlType_e;                /**< Pwm Control Type */
+    t_cbFMKIO_PulseEvent    * pulseEvnt_pcb;        /**< callback function when a pulse is finihed if pwm pulse is set  */
+    t_cbFMKIO_SigErrorMngmt * sigError_cb;          /**< callback function if an error occured  */
 
 } t_sFMKIO_PwmSigInfo;
 
@@ -323,6 +322,11 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void);
  *	@brief      Fast task to perform Encoder Computations
  */
 static t_eReturnCode s_FMKIO_FastTask_EcdrMngmt(void);
+/**
+ *
+ *	@brief      Check if signal has to be link to pulses purpose
+ */
+static t_eReturnCode s_FMKIO_CheckSyncPwmSig(t_eFMKIO_OutPwmSig f_sigPwm_e);
 //****************************************************************************
 //                      Public functions - Implementation
 //********************************************************************************
@@ -403,7 +407,8 @@ t_eReturnCode FMKIO_Init(void)
         g_OutPwmSigInfo_as[LLI_u8].frequencyReq_f32   = (t_uint32)0;
         g_OutPwmSigInfo_as[LLI_u8].reqDutycycle_u16   = (t_float32)0;
         g_OutPwmSigInfo_as[LLI_u8].rampId_u8 = (t_uint8)FMKIO_RAMP_UNUSED;
-        g_OutPwmSigInfo_as[LLI_u8].pidId_u8 = (t_uint8)FMKIO_PID_UNUSED;
+        g_OutPwmSigInfo_as[LLI_u8].ctrlType_e = FMKIO_PWM_CTRL_TYPE_UNUSED;
+        g_OutPwmSigInfo_as[LLI_u8].linkListSynchrNextSig_e = FMKIO_OUTPUT_SIGPWM_NB;
         g_OutPwmSigInfo_as[LLI_u8].sigError_cb = (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION;
         g_OutPwmSigInfo_as[LLI_u8].pulseEvnt_pcb = (t_cbFMKIO_PulseEvent *)NULL_FUNCTION;
 
@@ -946,6 +951,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
             Ret_e = FMKTIM_Set_PWMLineCfg(  (t_eFMKTIM_InterruptLineIO)ITLineIO_u8, 
                                             f_sigPwmCfg_s.frequency_f32,
                                             bscadvPolarity_e,
+                                            f_sigCtrlPrm_s.enablePulseSyncOpe_b,
                                             s_FMKIO_basicAdvTimerCallback);
         }
         else if(timerOrigin_e == FMKIO_ITLINE_TYPE_HRTIM)
@@ -997,6 +1003,10 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
             {
                 Ret_e = LIBRamp_Init(   (*f_sigCtrlPrm_s.rampCfg_ps),
                                         (&g_OutPwmSigInfo_as[f_signal_e].rampId_u8));
+            }
+            else 
+            {
+                ASSERT((t_uint16)f_sigCtrlPrm_s.ctrlType_e);
             }
         }
         if (Ret_e == RC_OK)
@@ -2369,6 +2379,35 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void)
     }
 
     return Ret_e;
+}
+
+/*********************************
+ * s_FMKIO_FastTask_PwmMngmt
+ *********************************/
+static t_eReturnCode s_FMKIO_CheckSyncPwmSig(t_eFMKIO_OutPwmSig f_sigPwm_e)
+{
+    t_eReturnCode Ret_e;
+    t_uint8 idxSigPwm_u8;
+
+    if(f_sigPwm_e >= FMKIO_OUTPUT_SIGPWM_NB)
+    {
+        ASSERT((t_uint16)f_sigPwm_e);
+        Ret_e = RC_ERROR_PARAM_INVALID;
+    }
+    else
+    {
+        for(idxSigPwm_u8 = (t_uint8)0 ; idxSigPwm_u8 < FMKIO_OUTPUT_SIGPWM_NB ; idxSigPwm_u8++)
+        {
+            //---- link the signal which share the same timer for pulses purpose, so if it's not 
+            //      we don't care ----//
+            if((c_OutPwmSigBspMap_as[f_sigPwm_e].TimOrigin_e == FMKIO_ITLINE_TYPE_ADVTIM)
+            && (c_OutPwmSigBspMap_as[f_sigPwm_e].TimOrigin_e == c_OutPwmSigBspMap_as[idxSigPwm_u8].TimOrigin_e)
+            && ((c_OutPwmSigBspMap_as[f_sigPwm_e].ITLine_u8 == c_OutPwmSigBspMap_as[idxSigPwm_u8].TimOrigin_e)))
+            {
+
+            }
+        }
+    }
 }
 
 /*********************************
