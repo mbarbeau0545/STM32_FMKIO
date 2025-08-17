@@ -445,6 +445,7 @@
     *               call FMKTIM/FMKHRT to configure a timer in order to convert generate
     *               the pwm period and dutycycle.\n
     *  @warning     for pulse please see @ref FMKTIM_SetPwmLineCfg for info and @ref FMKHRT_SetPwlLineCfg
+    *               youre are not allowed to reset pulses from callback f_pulseEvnt_pcb !!!!
     *
     *	@param[in]      f_signal_e             : the input analog signal, a value from @ref t_eFMKIO_OutPwmSig
     *	@param[in]      f_sigPwmCfg_s          : the output waveform configuration

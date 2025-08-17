@@ -408,7 +408,6 @@ t_eReturnCode FMKIO_Init(void)
         g_OutPwmSigInfo_as[LLI_u8].reqDutycycle_u16   = (t_float32)0;
         g_OutPwmSigInfo_as[LLI_u8].rampId_u8 = (t_uint8)FMKIO_RAMP_UNUSED;
         g_OutPwmSigInfo_as[LLI_u8].ctrlType_e = FMKIO_PWM_CTRL_TYPE_UNUSED;
-        g_OutPwmSigInfo_as[LLI_u8].linkListSynchrNextSig_e = FMKIO_OUTPUT_SIGPWM_NB;
         g_OutPwmSigInfo_as[LLI_u8].sigError_cb = (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION;
         g_OutPwmSigInfo_as[LLI_u8].pulseEvnt_pcb = (t_cbFMKIO_PulseEvent *)NULL_FUNCTION;
 
@@ -958,6 +957,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
         {
             
             pwmCfg_s.deadTime_u32 = f_sigPwmCfg_s.deadTime_u32;
+            pwmCfg_s.enableSyncPulseChnlOpe_b = f_sigCtrlPrm_s.enablePulseSyncOpe_b;
             pwmCfg_s.frequency_f32 = f_sigPwmCfg_s.frequency_f32;
 
             if(f_sigPwmCfg_s.polarity_e == FMKIO_SIGPWM_POLARITY_HIGH)
