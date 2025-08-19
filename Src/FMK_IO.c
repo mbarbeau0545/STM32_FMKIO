@@ -17,6 +17,7 @@
 #include "FMK_HAL/FMK_TIM/Src/FMK_TIM.h"
 #include "FMK_HAL/FMK_CDA/Src/FMK_CDA.h"
 #include "FMK_HAL/FMK_CPU/Src/FMK_CPU.h"
+#include "FMK_HAL/FMK_HRT/Src/FMK_HRT.h"
 #include "Library/SafeMem/SafeMem.h"
 
 // ********************************************************************
@@ -322,11 +323,6 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void);
  *	@brief      Fast task to perform Encoder Computations
  */
 static t_eReturnCode s_FMKIO_FastTask_EcdrMngmt(void);
-/**
- *
- *	@brief      Check if signal has to be link to pulses purpose
- */
-static t_eReturnCode s_FMKIO_CheckSyncPwmSig(t_eFMKIO_OutPwmSig f_sigPwm_e);
 //****************************************************************************
 //                      Public functions - Implementation
 //********************************************************************************
@@ -2055,6 +2051,7 @@ static t_eReturnCode s_FMKIO_PreOperational(void)
     &&  (Ret_e == RC_OK); 
         idxSigFreq_u8++)
     {
+        maskUpdate_u8 = (t_uint8)0;
         if(g_InFreqSigInfo_as[idxSigFreq_u8].IsSigConfigured_b == (t_bool)True)
         {
             ICOpe_s.IcState_e = FMKTIM_IC_STATE_ENABLE;
@@ -2379,35 +2376,6 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void)
     }
 
     return Ret_e;
-}
-
-/*********************************
- * s_FMKIO_FastTask_PwmMngmt
- *********************************/
-static t_eReturnCode s_FMKIO_CheckSyncPwmSig(t_eFMKIO_OutPwmSig f_sigPwm_e)
-{
-    t_eReturnCode Ret_e;
-    t_uint8 idxSigPwm_u8;
-
-    if(f_sigPwm_e >= FMKIO_OUTPUT_SIGPWM_NB)
-    {
-        ASSERT((t_uint16)f_sigPwm_e);
-        Ret_e = RC_ERROR_PARAM_INVALID;
-    }
-    else
-    {
-        for(idxSigPwm_u8 = (t_uint8)0 ; idxSigPwm_u8 < FMKIO_OUTPUT_SIGPWM_NB ; idxSigPwm_u8++)
-        {
-            //---- link the signal which share the same timer for pulses purpose, so if it's not 
-            //      we don't care ----//
-            if((c_OutPwmSigBspMap_as[f_sigPwm_e].TimOrigin_e == FMKIO_ITLINE_TYPE_ADVTIM)
-            && (c_OutPwmSigBspMap_as[f_sigPwm_e].TimOrigin_e == c_OutPwmSigBspMap_as[idxSigPwm_u8].TimOrigin_e)
-            && ((c_OutPwmSigBspMap_as[f_sigPwm_e].ITLine_u8 == c_OutPwmSigBspMap_as[idxSigPwm_u8].TimOrigin_e)))
-            {
-
-            }
-        }
-    }
 }
 
 /*********************************
