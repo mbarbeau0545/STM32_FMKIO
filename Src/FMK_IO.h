@@ -179,7 +179,7 @@
     */
    typedef struct 
     {
-        t_float32 frequency_f32;                 /**< Start frequency of the Pwm */
+        t_float32 frequency_f32;                /**< Start frequency of the Pwm */
         t_eFMKIO_SpdMode spdMode_e;             /**< Output Speed Mode (advise -> high) */
         t_eFMKIO_PullMode pullMode_e;           /**< Output pull mode (Gnd or  Vcc and output is off) */
         t_eFMKIO_SigPwmPolarity polarity_e;     /**< Polarity of the Pwm */
@@ -191,7 +191,8 @@
     typedef struct 
     {
         t_sLIBRamp_RampCfg * rampCfg_ps;        /**< Ramp signal configuration, put NULL if not used */
-        t_eFMKIO_PwmCtrlType ctrlType_e;
+        t_eFMKIO_PwmCtrlType ctrlType_e;        /**< Frequency ramp or Dutycile ramp  */
+        t_bool enablePulseSyncOpe_b;            /**< Enable (TRUE) the synchronization of the start of the pulses */
     } t_sFMKIO_PwmControlPrm;
 
     /**
@@ -443,14 +444,8 @@
     *               This function configure bspInit , call HAL_function,
     *               call FMKTIM/FMKHRT to configure a timer in order to convert generate
     *               the pwm period and dutycycle.\n
-    *  @warning     If user wants to generate pulse, timer used by the pin must be an advanced or High Resolution Cfg.
-    *               If the timer is an High Resolution one, not all the frequency are allwed compare to to basic and advenced timer 
-    *               The parameter that deals with the frequency range is FMKIO_PRM_FREQ_RANGE
-    *               IMPORTANT NOTE -> For SMT32, each signal has a timer and a channel
-    *               based on hardware confifguration. A timer has multiple channel that shared the frequency
-    *               f_frequency_u32, once the timer set with this frequency the other signal (channel) 
-    *               will have the same frequency.\n If the frequency is changed, it will be changed for every signal.\n
-    *
+    *  @warning     for pulse please see @ref FMKTIM_SetPwmLineCfg for info and @ref FMKHRT_SetPwlLineCfg
+    *               youre are not allowed to reset pulses from callback f_pulseEvnt_pcb !!!!
     *
     *	@param[in]      f_signal_e             : the input analog signal, a value from @ref t_eFMKIO_OutPwmSig
     *	@param[in]      f_sigPwmCfg_s          : the output waveform configuration
@@ -690,6 +685,25 @@
     *	@note       Once the configuration is done, this function update the dutycyle of 
     *               the pwm. if the PWM is not started yet the framework automatically set ON the channel
     *               if the dutyCycle is set to 0 that will shut down the pulse generation.\n 
+    *  @warning     Pulses are very Tricky !! here's a bit of explanation -> in this framework,
+    *               we do not set pulse per pulse 'cause that require a lot of CPU load for nothing
+    *               In Advance Timer and High Resolution Timer there is a register called RCR that allows 
+    *               us to trigger a callback every x times the CNT reach ARR, it means every x pulses < 65535 
+    *               fmktim is called, and then fmkio is called, and then you are called with f_pulseEvnt_pcb.
+    *               But (there is always a but with arm cpu), RCR is a register from the timer, in consequence 
+    *               when the callback pop-up in fmktim is doesn't know which pwm to stop so it has been decided to shut down 
+    *               every pwm share this register. So as a user, you will be call several times because pulses are done
+    *               RULE NUMBER 1 -> use only same timer and different channel to make synchrodax
+    *                               else if you want to set different pulses on the same time but differe,t channel, it
+    *                               doesn't work 
+    *               RULE NUMBER 2 -> The FmkIo software check if several channel aere on the same timer and if it the case 
+    *                                   consider a "master" channel that actually set the pulses and on other it will just 
+    *                                   set the pwm freq and dc
+    *                               So from the user point of view, it's better if you call this API for every channel
+    *                               Even if it doesn't actually send pulses for evey channel from a same timer but it allows
+    *                               you code to be reliable if you change somehow the SIG_PWM_X configuration.
+    *               RULE NUMBER 3 -> As it is a hardware constraint, there's nothing we can do, so use it for synchronize stuff
+    *                                   (don't even if it actually works ;) ) 
     *
     *
     *	@param[in]      f_signal_e        : the input pwm signal, a value from @ref t_eFMKIO_OutPwmSig
@@ -712,7 +726,6 @@
     *	@note       Once the configuration is done, this function update the dutycyle of 
     *               the pwm. if the PWM is not started yet the framework automatically set ON the channel
     *               if the dutyCycle is set to 0 that will shut down the pulse generation.\n 
-    *
     *
     *	@param[in]      f_signal_e        : the input pwm signal, a value from @ref t_eFMKIO_OutPwmSig
     *	@param[in]      f_dutyCycle_u16   : the dutycyle, value between 0 (0%) - 1000 (100%)

@@ -17,6 +17,7 @@
 #include "FMK_HAL/FMK_TIM/Src/FMK_TIM.h"
 #include "FMK_HAL/FMK_CDA/Src/FMK_CDA.h"
 #include "FMK_HAL/FMK_CPU/Src/FMK_CPU.h"
+#include "FMK_HAL/FMK_HRT/Src/FMK_HRT.h"
 #include "Library/SafeMem/SafeMem.h"
 
 // ********************************************************************
@@ -55,14 +56,13 @@ typedef struct
 /**< Structure common to all Pwm signal to repertory signal information */
 typedef struct 
 {
-    t_bool IsSigConfigured_b;                   /**< Flag which indicate wether or not the signal has been configured */
-    t_float32 frequencyReq_f32;
-    t_uint16 reqDutycycle_u16;
-    t_uint8 rampId_u8;
-    t_uint8 pidId_u8;
-    t_eFMKIO_PwmCtrlType ctrlType_e;
-    t_cbFMKIO_PulseEvent    * pulseEvnt_pcb;      /**< callback function when a pulse is finihed if pwm pulse is set  */
-    t_cbFMKIO_SigErrorMngmt * sigError_cb;      /**< callback function if an error occured  */
+    t_bool IsSigConfigured_b;                       /**< Flag which indicate wether or not the signal has been configured */
+    t_float32 frequencyReq_f32;                     /**< Freqnuency request by the user */
+    t_uint16 reqDutycycle_u16;                      /**< Duty cycle request by the user */
+    t_uint8 rampId_u8;                              /**< Ramp Id for computation */
+    t_eFMKIO_PwmCtrlType ctrlType_e;                /**< Pwm Control Type */
+    t_cbFMKIO_PulseEvent    * pulseEvnt_pcb;        /**< callback function when a pulse is finihed if pwm pulse is set  */
+    t_cbFMKIO_SigErrorMngmt * sigError_cb;          /**< callback function if an error occured  */
 
 } t_sFMKIO_PwmSigInfo;
 
@@ -403,7 +403,7 @@ t_eReturnCode FMKIO_Init(void)
         g_OutPwmSigInfo_as[LLI_u8].frequencyReq_f32   = (t_uint32)0;
         g_OutPwmSigInfo_as[LLI_u8].reqDutycycle_u16   = (t_float32)0;
         g_OutPwmSigInfo_as[LLI_u8].rampId_u8 = (t_uint8)FMKIO_RAMP_UNUSED;
-        g_OutPwmSigInfo_as[LLI_u8].pidId_u8 = (t_uint8)FMKIO_PID_UNUSED;
+        g_OutPwmSigInfo_as[LLI_u8].ctrlType_e = FMKIO_PWM_CTRL_TYPE_UNUSED;
         g_OutPwmSigInfo_as[LLI_u8].sigError_cb = (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION;
         g_OutPwmSigInfo_as[LLI_u8].pulseEvnt_pcb = (t_cbFMKIO_PulseEvent *)NULL_FUNCTION;
 
@@ -946,12 +946,14 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
             Ret_e = FMKTIM_Set_PWMLineCfg(  (t_eFMKTIM_InterruptLineIO)ITLineIO_u8, 
                                             f_sigPwmCfg_s.frequency_f32,
                                             bscadvPolarity_e,
+                                            f_sigCtrlPrm_s.enablePulseSyncOpe_b,
                                             s_FMKIO_basicAdvTimerCallback);
         }
         else if(timerOrigin_e == FMKIO_ITLINE_TYPE_HRTIM)
         {
             
             pwmCfg_s.deadTime_u32 = f_sigPwmCfg_s.deadTime_u32;
+            pwmCfg_s.enableSyncPulseChnlOpe_b = f_sigCtrlPrm_s.enablePulseSyncOpe_b;
             pwmCfg_s.frequency_f32 = f_sigPwmCfg_s.frequency_f32;
 
             if(f_sigPwmCfg_s.polarity_e == FMKIO_SIGPWM_POLARITY_HIGH)
@@ -997,6 +999,10 @@ t_eReturnCode FMKIO_Set_OutPwmSigCfg(   t_eFMKIO_OutPwmSig       f_signal_e,
             {
                 Ret_e = LIBRamp_Init(   (*f_sigCtrlPrm_s.rampCfg_ps),
                                         (&g_OutPwmSigInfo_as[f_signal_e].rampId_u8));
+            }
+            else 
+            {
+                ASSERT((t_uint16)f_sigCtrlPrm_s.ctrlType_e);
             }
         }
         if (Ret_e == RC_OK)
@@ -1918,7 +1924,6 @@ t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 
         value_u32 = freqSigInfo_s.value_u32;
         arrTim_u32 = freqSigInfo_s.TimARRValue_u32;
         timFreqHz_f32 = freqSigInfo_s.timFreqHzVal_f32;
-        FMKSRL_LOG("delat capt %d\r\n", value_u32);
 
         switch (freqSigInfo_s.meas_e)
         {
@@ -2046,6 +2051,7 @@ static t_eReturnCode s_FMKIO_PreOperational(void)
     &&  (Ret_e == RC_OK); 
         idxSigFreq_u8++)
     {
+        maskUpdate_u8 = (t_uint8)0;
         if(g_InFreqSigInfo_as[idxSigFreq_u8].IsSigConfigured_b == (t_bool)True)
         {
             ICOpe_s.IcState_e = FMKTIM_IC_STATE_ENABLE;
@@ -2141,32 +2147,38 @@ static t_eReturnCode s_FMKIO_PerformDiagnostic(void)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_uint8 LLI_u8;
-    t_uint16 cpuChnlStatus_u16;
     t_uint16 adcChnlStatus_u16;
     t_uint8 ITLineVal_u8;
+    t_eFMKIO_OutTimerCfg timOrign_e;
     t_eFMKTIM_InterruptLineType ITLineType_e;
+    t_eFMKTIM_ErrorState ChnlStatus_e = FMKTIM_ERRSTATE_OK;
 
     //------perform diag for PWM signal configuration------//
     for(LLI_u8 = (t_uint8)0 ; (LLI_u8 < FMKIO_OUTPUT_SIGPWM_NB) ; LLI_u8++)
     {
         if(g_OutPwmSigInfo_as[LLI_u8].IsSigConfigured_b == (t_bool)True)
         {
-
             //------update Information------//
             ITLineVal_u8 = (t_uint8)c_OutPwmSigBspMap_as[LLI_u8].ITLine_u8;
             ITLineType_e = FMKTIM_INTERRUPT_LINE_TYPE_IO;
-            //------Get Error Status------//
-            Ret_e = FMKTIM_Get_LineErrorStatus(ITLineType_e, 
-                                                  ITLineVal_u8,
-                                                  &cpuChnlStatus_u16);
-            if((Ret_e == RC_OK)
-            && (GETBIT(cpuChnlStatus_u16, FMKTIM_ERRSTATE_OK) != BIT_IS_SET_16B)
-            && (g_OutPwmSigInfo_as[LLI_u8].sigError_cb != (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION))
+            timOrign_e = c_OutPwmSigBspMap_as[LLI_u8].TimOrigin_e;
+            
+            if((timOrign_e == FMKIO_ITLINE_TYPE_BSCTIM)
+            || (timOrign_e ==  FMKIO_ITLINE_TYPE_ADVTIM))
             {
-                g_OutPwmSigInfo_as[LLI_u8].sigError_cb( FMKIO_SIGTYPE_OUTPUT_PWM, 
-                                                        LLI_u8,
-                                                        cpuChnlStatus_u16, 
-                                                        0);
+                //------Get Error Status------//
+                Ret_e = FMKTIM_Get_LineErrorStatus(ITLineType_e, 
+                                                    ITLineVal_u8,
+                                                    &ChnlStatus_e);
+                if((Ret_e == RC_OK)
+                && (ChnlStatus_e != FMKTIM_ERRSTATE_OK)
+                && (g_OutPwmSigInfo_as[LLI_u8].sigError_cb != (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION))
+                {
+                    g_OutPwmSigInfo_as[LLI_u8].sigError_cb( FMKIO_SIGTYPE_OUTPUT_PWM, 
+                                                            LLI_u8,
+                                                            ChnlStatus_e, 
+                                                            0);
+                }
             }
         }
     }
@@ -2181,15 +2193,15 @@ static t_eReturnCode s_FMKIO_PerformDiagnostic(void)
             //------Get Error Status------//
             Ret_e = FMKTIM_Get_LineErrorStatus(  ITLineType_e, 
                                                     ITLineVal_u8,
-                                                    &cpuChnlStatus_u16);
+                                                    &ChnlStatus_e);
 
             if((Ret_e == RC_OK)
-            && (GETBIT(cpuChnlStatus_u16, FMKTIM_ERRSTATE_OK) !=  BIT_IS_SET_16B)
+            && (ChnlStatus_e != FMKTIM_ERRSTATE_OK)
             && (g_InFreqSigInfo_as[LLI_u8].sigError_cb != (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION))
             {
                 g_InFreqSigInfo_as[LLI_u8].sigError_cb( FMKIO_SIGTYPE_INPUT_FREQ,
                                                         LLI_u8,
-                                                        cpuChnlStatus_u16,
+                                                        ChnlStatus_e,
                                                         0);
             }
         }
