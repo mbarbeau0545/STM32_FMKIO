@@ -2101,7 +2101,8 @@ static t_eReturnCode s_FMKIO_PreOperational(void)
                                                     EncoderTimerOpe_e);
             }
 
-            if(Ret_e == RC_OK)
+            if((Ret_e == RC_OK)
+            && (g_fastTaskEcdrStatus_b == FALSE))
             {
                 //---- Activate Fast task for Encoder Managment ----//
                 Ret_e = APPSYS_SetFastTaskState(APPSYS_MODULE_FMK_IO, APPSYS_FAST_TASK_ENABLE);
