@@ -1265,16 +1265,12 @@ t_eReturnCode FMKIO_Set_OutPwmSigDutyCycle(t_eFMKIO_OutPwmSig f_signal_e, t_uint
                 g_fastTaskPwmStatus_b = True;
                 Ret_e = APPSYS_SetFastTaskState(APPSYS_MODULE_FMK_IO,
                                                 APPSYS_FAST_TASK_ENABLE);
-                if(Ret_e == RC_OK)
-                {   
-                    pwmSigInfo_s.reqDutycycle_u16 = f_dutyCycle_u16;
-                }
-                else 
+                if(Ret_e != RC_OK)
                 {
                     ASSERT((t_uint16)Ret_e);
                 }
             }
-
+            pwmSigInfo_s.reqDutycycle_u16 = f_dutyCycle_u16;
             Ret_e = SMB_Write(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
         }
         else 
@@ -1333,6 +1329,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_floa
             if ((pwmSigInfo_s.frequencyReq_f32 <  (f_frequency_f32 + 0.2))
             && (pwmSigInfo_s.frequencyReq_f32 >  (f_frequency_f32 - 0.2)))
             {
+                //---- do nothing ----//
                 Ret_e = RC_WARNING_NO_OPERATION;
             }
             else
@@ -1345,19 +1342,13 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_floa
                         g_fastTaskPwmStatus_b = True;
                         Ret_e = APPSYS_SetFastTaskState(APPSYS_MODULE_FMK_IO,
                                                         APPSYS_FAST_TASK_ENABLE);
-                        if (Ret_e == RC_OK)
-                        {
-                            pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
-                        }
-                        else
+                        if (Ret_e != RC_OK)
                         {
                             ASSERT((t_uint16)Ret_e);
                         }
                     }
-                    else
-                    {
-                        pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
-                    }
+
+                    pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
                 }
                 else
                 {
@@ -2337,8 +2328,10 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void)
             {
                 ASSERT((t_uint16)Ret_e);
             }
-            if ((pwmSigInfo_s.frequencyReq_f32 < (t_uint32)(computeRampVal_f32 + 0.2))
-            && (pwmSigInfo_s.frequencyReq_f32 > (t_uint32)(computeRampVal_f32 - 0.2)))
+
+            //---- if target not reach yet ----//
+            if ((pwmSigInfo_s.frequencyReq_f32 > (computeRampVal_f32 + 0.2))
+            || (pwmSigInfo_s.frequencyReq_f32 < (computeRampVal_f32 - 0.2)))
             {
                 SETBIT_8B(mskPwmActivity_u32, idxSigPwm_u8);
             }
@@ -2360,14 +2353,12 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void)
             {
                 ASSERT((t_uint16)Ret_e);
             }
-            if (pwmSigInfo_s.reqDutycycle_u16 != (t_uint16)computeRampVal_f32)
+            //---- if target not reach yet ----//
+            if ((pwmSigInfo_s.reqDutycycle_u16 > (t_uint16)(computeRampVal_f32 + 0.2f))
+            ||  (pwmSigInfo_s.reqDutycycle_u16 < (t_uint16)(computeRampVal_f32 - 0.2f)))
             {
                 SETBIT_8B(mskPwmActivity_u32, idxSigPwm_u8);
             }
-        }
-        else
-        {
-            ASSERT((t_uint32)pwmSigInfo_s.ctrlType_e);
         }
     }
 
