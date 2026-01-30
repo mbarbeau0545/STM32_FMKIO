@@ -1245,10 +1245,6 @@ t_eReturnCode FMKIO_Set_OutPwmSigDutyCycle(t_eFMKIO_OutPwmSig f_signal_e, t_uint
     {
         Ret_e = RC_WARNING_BUSY;
     }
-    else if(g_OutPwmSigInfo_as[f_signal_e].reqDutycycle_u16 == f_dutyCycle_u16)
-    {
-        Ret_e = RC_WARNING_NO_OPERATION;
-    }
     if (Ret_e == RC_OK)
     {
         Ret_e = SMB_Read(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
@@ -1291,10 +1287,6 @@ t_eReturnCode FMKIO_Set_OutPwmSigDutyCycle(t_eFMKIO_OutPwmSig f_signal_e, t_uint
             Ret_e = SMB_Write(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
         }
     }
-    if(Ret_e == RC_WARNING_NO_OPERATION)
-    {
-        Ret_e = RC_OK;
-    }
 
     return Ret_e;
 }
@@ -1326,54 +1318,40 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_floa
         Ret_e = SMB_Read(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
         if (Ret_e == RC_OK)
         {
-            if ((pwmSigInfo_s.frequencyReq_f32 <  (f_frequency_f32 + 0.2))
-            && (pwmSigInfo_s.frequencyReq_f32 >  (f_frequency_f32 - 0.2)))
+            //---- if Pwm Ctrl Active let Fast Task deal with it ----//
+            if (pwmSigInfo_s.ctrlType_e == FMKIO_PWM_CTRL_TYPE_FREQ)
             {
-                //---- do nothing ----//
-                Ret_e = RC_WARNING_NO_OPERATION;
+                if (g_fastTaskPwmStatus_b == (t_bool)False)
+                {
+                    g_fastTaskPwmStatus_b = True;
+                    Ret_e = APPSYS_SetFastTaskState(APPSYS_MODULE_FMK_IO,
+                                                    APPSYS_FAST_TASK_ENABLE);
+                    if (Ret_e != RC_OK)
+                    {
+                        ASSERT((t_uint16)Ret_e);
+                    }
+                }
+
+                pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
             }
             else
             {
-                //---- if Pwm Ctrl Active let Fast Task deal with it ----//
-                if (pwmSigInfo_s.ctrlType_e == FMKIO_PWM_CTRL_TYPE_FREQ)
-                {
-                    if (g_fastTaskPwmStatus_b == (t_bool)False)
-                    {
-                        g_fastTaskPwmStatus_b = True;
-                        Ret_e = APPSYS_SetFastTaskState(APPSYS_MODULE_FMK_IO,
-                                                        APPSYS_FAST_TASK_ENABLE);
-                        if (Ret_e != RC_OK)
-                        {
-                            ASSERT((t_uint16)Ret_e);
-                        }
-                    }
-
-                    pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
-                }
-                else
-                {
-                    //---- Make the output change now ----//
-                    Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
-                                                      (t_uint16 *)(&pwmSigInfo_s.reqDutycycle_u16),
-                                                      (t_float32 *)(&f_frequency_f32),
-                                                      (t_uint32 *)NULL);
-                    if (Ret_e == RC_OK)
-                    {
-                        pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
-                    }
-                }
-
+                //---- Make the output change now ----//
+                Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
+                                                    (t_uint16 *)(&pwmSigInfo_s.reqDutycycle_u16),
+                                                    (t_float32 *)(&f_frequency_f32),
+                                                    (t_uint32 *)NULL);
                 if (Ret_e == RC_OK)
                 {
-                    Ret_e = SMB_Write(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
+                    pwmSigInfo_s.frequencyReq_f32 = f_frequency_f32;
                 }
             }
-        }
-    }
 
-    if (Ret_e == RC_WARNING_NO_OPERATION)
-    {
-        Ret_e = RC_OK;
+            if (Ret_e == RC_OK)
+            {
+                Ret_e = SMB_Write(&g_sfmb_PwmInfo_as[f_signal_e], &pwmSigInfo_s, sizeof(t_sFMKIO_PwmSigInfo));
+            }
+        }
     }
 
     return Ret_e;
