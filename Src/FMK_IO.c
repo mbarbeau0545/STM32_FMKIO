@@ -1338,7 +1338,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_floa
             {
                 //---- Make the output change now ----//
                 Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
-                                                    (t_uint16 *)(&pwmSigInfo_s.reqDutycycle_u16),
+                                                    (t_uint16 *)NULL, // fixbug, when changing frequency, don't change DC,
                                                     (t_float32 *)(&f_frequency_f32),
                                                     (t_uint32 *)NULL);
                 if (Ret_e == RC_OK)
