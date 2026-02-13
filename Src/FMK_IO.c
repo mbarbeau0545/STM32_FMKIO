@@ -463,13 +463,7 @@ t_eReturnCode FMKIO_Cyclic(void)
     {
         case STATE_CYCLIC_CFG:
         {
-            g_FmkIO_ModState_e = STATE_CYCLIC_WAITING;
-            Ret_e = RC_OK;
-            break;
-        }
-        case STATE_CYCLIC_WAITING:
-        {
-            // nothing to do, just wait all module are Ope
+            g_FmkIO_ModState_e = STATE_CYCLIC_PREOPE;
             Ret_e = RC_OK;
             break;
         }
