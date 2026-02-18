@@ -160,8 +160,8 @@
     } t_eFMKIO_EcdrValFormat;
     enum 
     {
-        FMKIO_ANALOG_SC_DETECTED = 0x0U,
-        FMKIO_ANALOG_OL_DETECTED = 0x1U,
+        FMKIO_ANALOG_SC_DETECTED = 0x1U,
+        FMKIO_ANALOG_OL_DETECTED = 0x2U,
     };
 
     /**
@@ -206,6 +206,12 @@
         t_eFMKIO_SpdMode speedMode_e;
         t_uint8 MultipleTourPerRev_u8;      /**< How many encoder tour means one tour for you */
     } t_sFMKIO_SigEcdrCfg;
+
+    typedef struct 
+    {
+        t_float32 minTresHold_f32;      //----- min analog value in mV expected -----//
+        t_float32 maxTresHold_f32;      //----  max analog value in mV expected -----//
+    } t_sFMKIO_InAnaTresHoldCfg;
     //-----------------------------TYPEDEF TYPES---------------------------//
     /**
     *
@@ -325,6 +331,8 @@
     *
     *
     *	@param[in]      f_signal_e     : the input analog signal, value from @ref t_eFMKIO_InAnaSig
+    *	@param[in]      f_tresHoldCfg_s     : treshold configuration
+    *	@param[in]      enableTresholdMntor_b     : Enable the threshold every FAST_TASK ms
     *	@param[in]      f_sigErr_cb     : callbback function that will be called if an error occured,NULL_FUNCTION if not used
     *	 
     *   @retval RC_OK                             @ref RC_OK
@@ -333,6 +341,8 @@
     *
     */
     t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e, 
+                                        t_sFMKIO_InAnaTresHoldCfg  * f_tresHoldCfg_ps,
+                                        t_bool f_enableTresholdMntor_b,
                                         t_cbFMKIO_SigErrorMngmt *f_sigErr_cb);
     /**
     *

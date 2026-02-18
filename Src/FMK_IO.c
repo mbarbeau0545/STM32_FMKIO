@@ -51,6 +51,9 @@ typedef struct
 {
     t_bool IsSigConfigured_b;                   /**< Flag which indicate wether or not the signal has been configured */
     t_cbFMKIO_SigErrorMngmt * sigError_cb;      /**< callback function if an error occured  */
+    t_float32 minTreshold_f32;                  /***< Min value expected to receive  */
+    t_float32 maxTreshold_f32;                  /***< Max value expected to receive  */
+    t_bool IsTresHoldActive_b                   /**< monitoring of treshold active  */
 
 } t_sFMKIO_AnaSigInfo;
 /**< Structure common to all Pwm signal to repertory signal information */
@@ -143,6 +146,7 @@ t_uint32 g_lastTick_ua32[FMKIO_INPUT_SIGEVNT_NB];
 /**< State of the fast task */
 static t_bool g_fastTaskPwmStatus_b = (t_bool)False;
 static t_bool g_fastTaskEcdrStatus_b = (t_bool)False;
+static t_bool g_fastTaskAnaStatus_b = (t_bool)FALSE;
 //********************************************************************************
 //                      Local functions - Prototypes
 //********************************************************************************
@@ -323,6 +327,11 @@ static t_eReturnCode s_FMKIO_FastTask_PwmMngmt(void);
  *	@brief      Fast task to perform Encoder Computations
  */
 static t_eReturnCode s_FMKIO_FastTask_EcdrMngmt(void);
+/**
+ *
+ *	@brief      Fast task to perform Encoder Computations
+ */
+static t_eReturnCode s_FMKIO_FastTask_AnaSigMngmt(void);
 //****************************************************************************
 //                      Public functions - Implementation
 //********************************************************************************
@@ -376,6 +385,9 @@ t_eReturnCode FMKIO_Init(void)
     for(LLI_u8 = (t_uint8)0 ; LLI_u8 < (t_uint8)FMKIO_INPUT_SIGANA_NB ; LLI_u8++)
     {
         g_InAnaSigInfo_as[LLI_u8].IsSigConfigured_b   = False;
+        g_InAnaSigInfo_as[LLI_u8].minTreshold_f32   = 0.0F;
+        g_InAnaSigInfo_as[LLI_u8].maxTreshold_f32  = 0.0f;
+        g_InAnaSigInfo_as[LLI_u8].IsTresHoldActive_b  = False;
         g_InAnaSigInfo_as[LLI_u8].sigError_cb = (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION;
     }
 
@@ -568,6 +580,8 @@ t_eReturnCode FMKIO_Set_InDigSigCfg(t_eFMKIO_InDigSig f_signal_e, t_eFMKIO_PullM
  * FMKIO_Set_InAnaSigCfg
  *********************************/
 t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e, 
+                                    t_sFMKIO_InAnaTresHoldCfg  * f_tresHoldCfg_ps,
+                                    t_bool f_enableTresholdMntor_b,
                                     t_cbFMKIO_SigErrorMngmt *f_sigErr_cb)
 {
     t_eReturnCode Ret_e = RC_OK;
@@ -598,7 +612,16 @@ t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e,
             if (Ret_e == RC_OK)
             { // update info
                 g_InAnaSigInfo_as[f_signal_e].IsSigConfigured_b = (t_bool)True;
+                g_InAnaSigInfo_as[f_signal_e].minTreshold_f32 = f_tresHoldCfg_ps->minTresHold_f32;
+                g_InAnaSigInfo_as[f_signal_e].maxTreshold_f32 = f_tresHoldCfg_ps->maxTresHold_f32;
+                g_InAnaSigInfo_as[f_signal_e].IsTresHoldActive_b = f_enableTresholdMntor_b;
                 g_InAnaSigInfo_as[f_signal_e].sigError_cb = f_sigErr_cb;
+
+                if((g_fastTaskAnaStatus_b == FALSE)
+                && (f_enableTresholdMntor_b == TRUE))
+                {
+                    g_fastTaskAnaStatus_b = TRUE;
+                }
             }
             else 
             {
@@ -2249,7 +2272,12 @@ static void s_FMKIO_FastTask(void)
         Ret_e = s_FMKIO_FastTask_EcdrMngmt();
         stopFastTask_b = (t_bool)False;
     }
-    if(Ret_e != RC_OK)
+    if(g_fastTaskAnaStatus_b == TRUE)
+    {
+        Ret_e = s_FMKIO_FastTask_AnaSigMngmt();
+        stopFastTask_b = FALSE;
+    }
+    if(Ret_e < RC_OK)
     {
         ASSERT((t_uint16)Ret_e);
     }
@@ -2434,6 +2462,49 @@ static t_eReturnCode s_FMKIO_FastTask_EcdrMngmt(void)
 
 
     return Ret_e;
+}
+
+/*********************************
+ * s_FMKIO_FastTask_AnaSigMngmt
+ *********************************/
+static t_eReturnCode s_FMKIO_FastTask_AnaSigMngmt(void)
+{
+    t_eReturnCode Ret_e;
+    t_uint8 LLI_u8;
+    t_sFMKIO_AnaSigInfo * AnaSigInfo_ps;
+    t_float32 anaChnValue_f32;
+
+    for(LLI_u8 = (t_uint8)0 ; LLI_u8 < FMKIO_INPUT_SIGANA_NB ; LLI_u8++)
+    {
+        AnaSigInfo_ps = &g_InAnaSigInfo_as[LLI_u8];
+
+        if(AnaSigInfo_ps->IsSigConfigured_b == TRUE)
+        {
+            Ret_e = FMKCDA_Get_AnaChannelMeasure(   c_InAnaSigBspMap_as[LLI_u8].adc_e,
+                                                    c_InAnaSigBspMap_as[LLI_u8].adcChannel_e,
+                                                    &anaChnValue_f32);
+
+            if(Ret_e == RC_OK)
+            {
+                if(anaChnValue_f32 < AnaSigInfo_ps->minTreshold_f32)
+                {
+                    AnaSigInfo_ps->sigError_cb( FMKIO_SIGTYPE_INPUT_ANA,
+                                                LLI_u8,
+                                                (t_uint16)0,
+                                                (t_uint8)FMKIO_ANALOG_OL_DETECTED);
+                }
+                else if(anaChnValue_f32 > AnaSigInfo_ps->maxTreshold_f32)
+                {
+                    AnaSigInfo_ps->sigError_cb( FMKIO_SIGTYPE_INPUT_ANA,
+                                                LLI_u8,
+                                                (t_uint16)0,
+                                                (t_uint8)FMKIO_ANALOG_SC_DETECTED);   
+                }
+            }
+        }
+    }
+
+    return;
 }
 /*********************************
  * s_FMKIO_MngSigFrequency
