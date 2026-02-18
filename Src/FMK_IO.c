@@ -591,12 +591,18 @@ t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e,
         Ret_e = RC_ERROR_PARAM_INVALID;
         ASSERT((t_uint16)Ret_e);
     }
-    if(g_InAnaSigInfo_as[f_signal_e].IsSigConfigured_b == (t_bool)True)
+    else if(g_InAnaSigInfo_as[f_signal_e].IsSigConfigured_b == (t_bool)True)
     {
         Ret_e = RC_ERROR_ALREADY_CONFIGURED;
         ASSERT((t_uint16)Ret_e);
     }
-    if (Ret_e == RC_OK)
+    else if((f_enableTresholdMntor_b == TRUE)
+    &&      (f_tresHoldCfg_ps == NULL))
+    {
+        Ret_e = RC_ERROR_PTR_NULL;
+        ASSERT((t_uint16)Ret_e);
+    }
+    else
     {
         Ret_e = s_FMKIO_Set_BspSigCfg(c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwGpio_e,
                                       c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwPin_e,
