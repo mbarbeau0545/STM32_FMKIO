@@ -2208,7 +2208,7 @@ static t_eReturnCode s_FMKIO_PerformDiagnostic(void)
                                             &adcChnlStatus_u16);
 
             if((Ret_e == RC_OK)
-            && (GETBIT(adcChnlStatus_u16, FMKCDA_ERRSTATE_OK) == BIT_IS_RESET_16B)
+            && (adcChnlStatus_u16 != (t_uint16)FMKCDA_ERRSTATE_OK)
             && (g_InAnaSigInfo_as[LLI_u8].sigError_cb != (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION))
             {
                 g_InAnaSigInfo_as[LLI_u8].sigError_cb(  FMKIO_SIGTYPE_INPUT_ANA,
