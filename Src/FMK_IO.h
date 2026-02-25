@@ -439,14 +439,14 @@
     *	@brief      Set the calibration value for an encoder (Relative 0 )
     *
     *	@param[in]      f_InEncdr_e             : the encoder input, value from @ref t_eFMKIO_InEcdrSignals
-    *	@param[in]      f_calibValue_u32        : Calibration value
+    *	@param[in]      f_calibValue_u32        : Calibration value in milliradian, this is the 0 of the robot
     *	 
     *   @retval RC_OK                             @ref RC_OK
     *   @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
     *   @retval RC_ERROR_ALREADY_CONFIGURED       @ref RC_ERROR_ALREADY_CONFIGURED
     *
     */
-    t_eReturnCode FMKIO_Set_InEcdrCalibOffset(t_eFMKIO_InEcdrSignals f_InEncdr_e, t_uint32 f_calibValue_u32);
+    t_eReturnCode FMKIO_Set_InEcdrCalibOffset(t_eFMKIO_InEcdrSignals f_InEncdr_e, t_float32 f_calibValue_mrad_f32);
     /**
     *
     *	@brief      Set an output in PWM configuration.\n
@@ -557,8 +557,10 @@
                     know the state of the signal on store it into f_value_pe.\n
     *
     *
-    *	@param[in]      f_signal_e       : the input frequency signal, a value from @ref t_eFMKIO_InDigSig
-    *	@param[in]      f_value_pe       : storage for value value, value from @ref t_eFMKIO_DigValue
+    *	@param[in]      f_signal_e               : the input encoder signal, a value from @ref t_eFMKIO_InDigSig
+    *	@param[in]      f_format_e               : the format value mradian or millidegree
+    *	@param[in]      f_absolutePos_pf32       : pointor to get the absolute value in multi tours
+    *	@param[in]      f_relativePos_pf32       : pointor to get ther relative position of the motor [-PI ; PI]
     *	 
     *   @retval RC_OK                             @ref RC_OK
     *   @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
@@ -568,7 +570,8 @@
     */
     t_eReturnCode FMKIO_Get_InEcdrPositionValue(t_eFMKIO_InEcdrSignals f_signal_e, 
                                                 t_eFMKIO_EcdrValFormat f_format_e,
-                                                t_float32 *f_value_pf32);
+                                                t_float32 *f_absolutePos_pf32,
+                                                t_float32 *f_relativePos_pf32);
 
     /**
     *
