@@ -108,8 +108,8 @@ typedef struct
     t_uint16 PPRValue_u16;                  /**< Pulse per Revolution perform by the encoder  */
     t_eFMKIO_EcdrDir direction_e;           /**< Encoder Direction */
     t_uint32 lastPos_u32;                   /**< the position of the previous cyclic */
-    t_float32 SoPositionRelative_mrad_f32;      /**< Multi tours position of encoder */
-    t_float32 SoPositionAbsolute_mrad_f32;  /**< Relative position of the motor */
+    t_float32 SoPositionMultiTurn_mrad_f32;      /**< Multi tours position of encoder */
+    t_float32 SoPositionWrapped_mrad_f32;  /**< Relative position of the motor */
     t_float32 SoSpeed_f32;                  /**< Software speed mmrad/s */
 } t_sFMKIO_InEcdrSigInfo;
 // ********************************************************************
@@ -1451,7 +1451,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigFrequency(t_eFMKIO_OutPwmSig f_signal_e, t_floa
 t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e, 
                                         t_float32 f_frequency_f32,
                                         t_uint16 f_dutyCycle_u16,
-                                        t_uint16 f_pulses_u16)
+                                        t_uint32 f_pulses_u32)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_eFMKIO_OutTimerCfg timOrgn_e;
@@ -1459,8 +1459,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
     t_sFMKIO_PwmSigInfo pwmSigInfo_s;
 
     if ((f_signal_e >= FMKIO_OUTPUT_SIGPWM_NB)
-    ||  (f_dutyCycle_u16 > FMKTIM_PWM_MAX_DUTY_CYLCE)
-    ||  (f_pulses_u16 > (t_uint16)CST_MAX_UINT_16BIT))
+    ||  (f_dutyCycle_u16 > FMKTIM_PWM_MAX_DUTY_CYLCE))
     {
         Ret_e = RC_ERROR_PARAM_INVALID;
         ASSERT((t_uint16)Ret_e);
@@ -1497,7 +1496,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
                 Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
                                                   &pwmSigInfo_s.reqDutycycle_u16,
                                                   (t_float32 *)&f_frequency_f32,
-                                                  (t_uint32 *)&f_pulses_u16);
+                                                  (t_uint32 *)&f_pulses_u32);
             }
             // PWM Ctrl Type : Frequency
             else if (pwmSigInfo_s.ctrlType_e == FMKIO_PWM_CTRL_TYPE_FREQ)
@@ -1506,7 +1505,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
                 Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
                                                   &f_dutyCycle_u16,
                                                   &pwmSigInfo_s.frequencyReq_f32,
-                                                  (t_uint32 *)&f_pulses_u16);
+                                                  (t_uint32 *)&f_pulses_u32);
             }
             // Aucun ctrlType actif
             else
@@ -1514,7 +1513,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
                 Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
                                                   &f_dutyCycle_u16,
                                                   &f_frequency_f32,
-                                                  (t_uint32 *)&f_pulses_u16);
+                                                  (t_uint32 *)&f_pulses_u32);
             }
 
             if (Ret_e == RC_OK)
@@ -1541,7 +1540,7 @@ t_eReturnCode FMKIO_Set_OutPwmSigPulses(t_eFMKIO_OutPwmSig f_signal_e,
             Ret_e = s_FMKIO_MngSigPwmWaveForm(f_signal_e,
                                               &f_dutyCycle_u16,
                                               &f_frequency_f32,
-                                              (t_uint32 *)&f_pulses_u16);
+                                              (t_uint32 *)&f_pulses_u32);
             if (Ret_e == RC_OK)
             {
                 pwmSigInfo_s.reqDutycycle_u16 = f_dutyCycle_u16;
@@ -1719,10 +1718,10 @@ t_eReturnCode FMKIO_Get_OutPwmSigDutyCycle(t_eFMKIO_OutPwmSig f_signal_e, t_uint
 /*********************************
  * FMKIO_Get_InDigSigValue
  *********************************/
-t_eReturnCode FMKIO_Get_InEcdrPositionValue(t_eFMKIO_InEcdrSignals f_signal_e, 
+t_eReturnCode FMKIO_Get_InEcdrPositionValue(t_eFMKIO_InEcdrSignals f_signal_e,
                                             t_eFMKIO_EcdrValFormat f_format_e,
-                                            t_float32 *f_absolutePos_pf32,
-                                            t_float32 *f_relativePos_pf32)
+                                            t_float32 *f_angleWrapped_pf32,
+                                            t_float32 *f_angleMultiturn_pf32)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_sFMKIO_InEcdrSigInfo ecdrSigInfo_s;
@@ -1760,24 +1759,24 @@ t_eReturnCode FMKIO_Get_InEcdrPositionValue(t_eFMKIO_InEcdrSignals f_signal_e,
                 {
                 case FMKIO_ECDR_VAL_FORMAT_MRADIAN:
                     //---- already in milliradian ----//
-                    if(f_relativePos_pf32 != NULL)
+                    if(f_angleWrapped_pf32 != NULL)
                     {
-                        *f_relativePos_pf32 = ecdrSigInfo_s.SoPositionRelative_mrad_f32;
+                        *f_angleWrapped_pf32 = ecdrSigInfo_s.SoPositionWrapped_mrad_f32;
                     }
-                    if(f_absolutePos_pf32 != NULL)
+                    if(f_angleMultiturn_pf32 != NULL)
                     {
-                        *f_absolutePos_pf32 = ecdrSigInfo_s.SoPositionAbsolute_mrad_f32;
+                        *f_angleMultiturn_pf32 = ecdrSigInfo_s.SoPositionMultiTurn_mrad_f32;
                     }
                 break;
                 case FMKIO_ECDR_VAL_FORMAT_MDEGREE:
-                    if(f_relativePos_pf32 != NULL)
+                    if(f_angleWrapped_pf32 != NULL)
                     {
-                        *f_relativePos_pf32 = (ecdrSigInfo_s.SoPositionRelative_mrad_f32
+                        *f_angleWrapped_pf32 = (ecdrSigInfo_s.SoPositionWrapped_mrad_f32
                                                 * 180.0F / M_PI);
                     }
-                    if(f_absolutePos_pf32 != NULL)
+                    if(f_angleMultiturn_pf32 != NULL)
                     {
-                        *f_absolutePos_pf32 = (ecdrSigInfo_s.SoPositionAbsolute_mrad_f32
+                        *f_angleMultiturn_pf32 = (ecdrSigInfo_s.SoPositionMultiTurn_mrad_f32
                                                 * 180.0F / M_PI);
                     }
                 break;
@@ -1791,8 +1790,8 @@ t_eReturnCode FMKIO_Get_InEcdrPositionValue(t_eFMKIO_InEcdrSignals f_signal_e,
         }
 
         // FMKSRL_LOG("RELPOS : %d, ABSPOS : %d, DIR %d, SPD : %d\r\n",
-        //                 (t_uint32)(ecdrSigInfo_s.SoPositionRelative_mrad_f32 * 1000.F),
-        //                 (t_uint32)(ecdrSigInfo_s.SoPositionAbsolute_mrad_f32 * 1000.F),
+        //                 (t_uint32)(ecdrSigInfo_s.SoPositionMultiTurn_mrad_f32 * 1000.F),
+        //                 (t_uint32)(ecdrSigInfo_s.SoPositionWrapped_mrad_f32 * 1000.F),
         //                 (t_uint32)(ecdrSigInfo_s.direction_e),
         //                 (t_uint32)(ecdrSigInfo_s.SoSpeed_f32 * 1000.0F));
     }
@@ -2572,18 +2571,18 @@ static t_eReturnCode s_FMKIO_FastTask_EcdrMngmt(void)
                 ((t_float32)delta_cnt_s32 * CST_2PI_MRAD) / counts_per_rev_f32;
 
             // 1) Intégration brute multi-tours (mrad)
-            t_float32 newSoPosCont_mrad_f32 = ecdrSigCfg_s.SoPositionRelative_mrad_f32 + delta_mrad_f32;
+            t_float32 newSoPosCont_mrad_f32 = ecdrSigCfg_s.SoPositionMultiTurn_mrad_f32 + delta_mrad_f32;
 
             // 2) Position robot continue (après calibration)
             t_float32 cont_mrad_offset_f32 =
                 newSoPosCont_mrad_f32 - ecdrSigCfg_s.calibOffset_mrad_f32;
 
             // 3) Exposer multi-tours en permanence
-            ecdrSigCfg_s.SoPositionRelative_mrad_f32 = cont_mrad_offset_f32; // si vous voulez stocker séparément
-            // ou réutilisez SoPositionRelative_mrad_f32 directement comme "robot", mais alors raw est perdu.
+            ecdrSigCfg_s.SoPositionMultiTurn_mrad_f32 = cont_mrad_offset_f32; // si vous voulez stocker séparément
+            // ou réutilisez SoPositionMultiTurn_mrad_f32 directement comme "robot", mais alors raw est perdu.
 
             // 4) Exposer 1 tour en permanence
-            ecdrSigCfg_s.SoPositionAbsolute_mrad_f32 = s_WrapToPi_mrad(cont_mrad_offset_f32);
+            ecdrSigCfg_s.SoPositionWrapped_mrad_f32 = s_WrapToPi_mrad(cont_mrad_offset_f32);
 
             // Save CNT courant
             ecdrSigCfg_s.lastPos_u32 = (t_uint32)curr_u16;
