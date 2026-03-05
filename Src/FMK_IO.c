@@ -912,7 +912,7 @@ t_eReturnCode FMKIO_Get_InEcdrSpeed(t_eFMKIO_InEcdrSignals f_InEncdr_e,
                 *f_ecdrSpeed_pf32 = ecdrSigCfg_s.SoSpeed_f32;
             break;
             case FMKIO_ECDR_VAL_FORMAT_MDEGREE:
-                *f_ecdrSpeed_pf32 = (t_float32)(ecdrSigCfg_s.SoSpeed_f32 * 180.0f / M_PI);
+                *f_ecdrSpeed_pf32 = (t_float32)(ecdrSigCfg_s.SoSpeed_f32 * 180.0f / CST_PI_RAD);
             break; 
             case FMKIO_ECDR_VAL_FORMAT_NB:
             default:
@@ -1772,12 +1772,12 @@ t_eReturnCode FMKIO_Get_InEcdrPositionValue(t_eFMKIO_InEcdrSignals f_signal_e,
                     if(f_angleWrapped_pf32 != NULL)
                     {
                         *f_angleWrapped_pf32 = (ecdrSigInfo_s.SoPositionWrapped_mrad_f32
-                                                * 180.0F / M_PI);
+                                                * 180.0F / CST_PI_RAD);
                     }
                     if(f_angleMultiturn_pf32 != NULL)
                     {
                         *f_angleMultiturn_pf32 = (ecdrSigInfo_s.SoPositionMultiTurn_mrad_f32
-                                                * 180.0F / M_PI);
+                                                * 180.0F / CST_PI_RAD);
                     }
                 break;
                 case FMKIO_ECDR_VAL_FORMAT_NB:
