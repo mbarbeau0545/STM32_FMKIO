@@ -20,9 +20,18 @@
     // ********************************************************************
     #include "../FMKCFG_ConfigFiles/FMKIO_ConfigPublic.h"
     #include "../FMKCFG_ConfigFiles/FMKTIM_ConfigPublic.h"
-    // ********************************************************************
-    // *                      Defines
-    // ********************************************************************
+// ********************************************************************
+// *                      Defines
+// ********************************************************************
+#if defined(FMKCPU_STM32_ECU_FAMILY_G4) || defined(FMKCPU_STM32_ECU_FAMILY_H7)
+    #define FMKIO_BSP_MODE_INPUT  ((t_uint32)GPIO_MODE_INPUT)
+    #define FMKIO_BSP_MODE_ANALOG ((t_uint32)GPIO_MODE_ANALOG)
+#elif defined(FMKCPU_STM32_ECU_FAMILY_F)
+    #define FMKIO_BSP_MODE_INPUT  ((t_uint32)MODE_INPUT)
+    #define FMKIO_BSP_MODE_ANALOG ((t_uint32)MODE_ANALOG)
+#else
+    #error "IO GPIO mode configuration is not available for this ECU family"
+#endif
 
     // ********************************************************************
     // *                      Types

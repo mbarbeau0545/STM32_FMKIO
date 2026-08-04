@@ -81,8 +81,10 @@
     typedef enum
     {
         FMKIO_FREQ_MEAS_FREQ = 0x0U,        /**< Freqency signal is a freqency in Hz */
-        FMKIO_FREQ_MEAS_COUNT,          /**< Freqency signal is a counter of event detected (rise/fall or both) */
-        FMKIO_FREQ_MEAS_PERIOD,         /**< Freqency signal is a period in ms */
+        FMKIO_FREQ_MEAS_COUNT,              /**< Freqency signal is a counter of event detected (rise/fall or both) */
+        FMKIO_FREQ_MEAS_PERIOD,             /**< Freqency signal is a period in ms */
+        FMKIO_FREQ_MEAS_DIGITAL,            /**< Frequency signal is the low high level */
+        FMKIO_FREQ_MEAS_DUTYCYCLE,          /**< Frequency signal is the dutycycle */
 
         FMKIO_FREQ_MEAS_NB,             /**< Number of frequency value available */
     } t_eFMKIO_FreqMeas;
@@ -361,7 +363,6 @@
     *
     *
     *	@param[in]      f_signal_e              : the input frequency signal, a value from @ref t_eFMKIO_InFreqSig
-    *	@param[in]      f_freqMeas_e            : the input pull mode, value from @ref t_eFMKIO_FreqMeas
     *	@param[in]      f_sigErr_cb             : callbback function that will be called if an error occured
     *   @param[in]      f_samplingHz_f32        : 
     *	 
@@ -372,7 +373,6 @@
     */
     t_eReturnCode FMKIO_Set_InFreqSigCfg(   t_eFMKIO_InFreqSig f_signal_e, 
                                         t_eFMKIO_SigTrigCptr f_trigger_e,
-                                        t_eFMKIO_FreqMeas f_freqMeas_e,
                                         t_float32 f_samplingHz_f32,
                                         t_cbFMKIO_SigErrorMngmt *f_sigErr_cb);
     /**
@@ -645,6 +645,7 @@
     *               and do nothing.
     *
     *	@param[in]      f_signal_e       : the input frequency signal, a value from @ref t_eFMKIO_InFreqSig
+    *	@param[in]      f_measType_e     : Measure type of frequency signal  @ref t_eFMKIO_FreqMeas
     *	@param[in]      f_value_pf32     : storage for value
     *	 
     *   @retval RC_OK                             @ref RC_OK
@@ -655,7 +656,9 @@
     *   @retval RC_ERROR_BUSY                     @ref RC_ERROR_BUSY
     *
     */
-    t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 *f_value_pf32);
+    t_eReturnCode FMKIO_Get_InFreqSigValue( t_eFMKIO_InFreqSig f_signal_e,
+                                            t_eFMKIO_FreqMeas f_measType_e,
+                                            t_float32 *f_value_pf32);
     /**
     *
     *	@brief      Update the dutyCycle for a PWM.\n

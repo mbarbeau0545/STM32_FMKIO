@@ -75,10 +75,9 @@ typedef struct
     t_bool isConfigured_b;                  /**< Flag to know the encoder pin are configured */
     t_bool rqsTimerLineOpe_b;               /**< Flag to know when an encoder is configured, set the timer ON */
     t_bool isSigCalib_b;                    /**< Flag to know if the frequency of the Input Compare is well calibrate  */
-    t_eFMKIO_FreqMeas meas_e;               /**< Frequency measuremnt mode (counter/ freq/Period) */
     t_eFMKIO_SigTrigCptr edgeTrig_e;        /**< save the configuration that trigger the computation */
-    t_uint32 value_u32;                     /**< the difference between the last and current capture on channel */
-    t_uint8 exceedCnt_u8;                    /**< Before change the ffrequency to adapt the Capture, we ensure that this is not noise  */
+    t_uint32 counterVal_u32;                /**< Storage for the coutner of edge */
+    t_uint32 deltaCaptureVal_u32;           /**< Delta capture betwween 2 interruption */
     t_float32 timFreqHzVal_f32;              /**< Timer frequency value */
     t_uint32 lastCaptureVal_u32;            /**< Last CCRx value */
     t_uint32 TimARRValue_u32;               /**<  Timer ARR register value for frequency computation */
@@ -217,7 +216,23 @@ static t_eReturnCode s_FMKIO_Get_BspTriggerMode(t_eFMKIO_SigTrigCptr f_trigger_e
  * @retval RC_OK                             @ref RC_OK
  *
  */
+
 static t_eReturnCode s_FMKIO_Get_EcdrTimerMode(t_eFMKIO_EcdrStartOpe f_StartOpeMode_e, t_eFMKTIM_EcdrOpe * f_EdrTimerOpe_pe);
+/**
+ *
+ *	@brief      Get the bsp digital state of a gpio.
+ *  @note       This function does not check if the pin is configured
+ *
+ *
+ *	@param[in]  f_trigger_e           : the enum that says the trigger mode, value from @ref t_eFMKIO_SigTrigCptr
+ *	@param[in]  f_bspTrigger_pu32     : the Hal value correponding the enum
+ *
+ * @retval RC_OK                             @ref RC_OK
+ *
+ */
+static t_eReturnCode s_FMKIO_Get_BspDigValue(   t_eFMKIO_GpioPort f_bspPort_e,
+                                                t_eFMKIO_BspGpioPin f_bspPin_e,
+                                                GPIO_PinState * f_bspState_pe);
 /**
  *
  *	@brief      This function set the Init of a pin on a GPIO
@@ -250,7 +265,7 @@ static t_eReturnCode s_FMKIO_Set_BspSigCfg(t_eFMKIO_GpioPort f_gpioPort_e,
  * @retval RC_ERROR_PARAM_INVALID            @ref RC_ERROR_PARAM_INVALID
  *
  */
-static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_InterruptType_e, t_uint8 f_InterruptLine_u8);
+static void s_FMKIO_MngSigFrequencyCb(t_eFMKTIM_InterruptLineType f_InterruptType_e, t_uint8 f_InterruptLine_u8);
 /**
  *
  *	@brief      Function to centralized GPIO interruption management
@@ -368,10 +383,13 @@ t_eReturnCode FMKIO_Init(void)
     t_uint8 LLI_u8;
     GPIO_TypeDef * bspGpio_ps;
     GPIO_InitTypeDef bspGpioInit_s;
+    t_uint32 gpioModeAna_u32;
+
+    (void)FMKIO_GetGpioModeAnalog(&gpioModeAna_u32);
 
     //---put every gpio in analog cfg to reduce consumption 
     //      and noise ----//
-    bspGpioInit_s.Mode = FMKIO_BSP_MODE_ANALOG;
+    bspGpioInit_s.Mode = gpioModeAna_u32;
     bspGpioInit_s.Pull = GPIO_NOPULL;
     bspGpioInit_s.Pin = GPIO_PIN_All;
     
@@ -390,12 +408,11 @@ t_eReturnCode FMKIO_Init(void)
     //---------Set Frequency Input Default Value---------//
     for(LLI_u8 = (t_uint8)0 ; LLI_u8 < (t_uint8)FMKIO_INPUT_SIGFREQ_NB ; LLI_u8++)
     {
-        g_InFreqSigInfo_as[LLI_u8].meas_e = FMKIO_FREQ_MEAS_NB;
-        g_InFreqSigInfo_as[LLI_u8].edgeTrig_e = FMKIO_STC_NB;
-        g_InFreqSigInfo_as[LLI_u8].isConfigured_b   = False;
+        g_InFreqSigInfo_as[LLI_u8].edgeTrig_e          = FMKIO_STC_NB;
+        g_InFreqSigInfo_as[LLI_u8].isConfigured_b      = False;
         g_InFreqSigInfo_as[LLI_u8].isSigCalib_b        = TRUE;
-        g_InFreqSigInfo_as[LLI_u8].value_u32           = (t_uint32)0;
-        g_InFreqSigInfo_as[LLI_u8].exceedCnt_u8         = (t_uint8)0;
+        g_InFreqSigInfo_as[LLI_u8].deltaCaptureVal_u32 = (t_float32)0.0F;
+        g_InFreqSigInfo_as[LLI_u8].counterVal_u32      = (t_uint32)0;
         g_InFreqSigInfo_as[LLI_u8].lastCaptureVal_u32  = (t_uint32)0;
         g_InFreqSigInfo_as[LLI_u8].sigError_cb = (t_cbFMKIO_SigErrorMngmt *)NULL_FUNCTION;
 
@@ -567,6 +584,7 @@ t_eReturnCode FMKIO_Set_InDigSigCfg(t_eFMKIO_InDigSig f_signal_e, t_eFMKIO_PullM
 {
     t_eReturnCode Ret_e = RC_OK;
     t_eFMKIO_GpioPort gpioPort_e;
+    t_uint32 gpioModeInput_u32;
 
     if ((f_signal_e >= FMKIO_INPUT_SIGDIG_NB) 
     ||  (f_pull_e >= FMKIO_PULL_MODE_NB))
@@ -582,12 +600,17 @@ t_eReturnCode FMKIO_Set_InDigSigCfg(t_eFMKIO_InDigSig f_signal_e, t_eFMKIO_PullM
     if (Ret_e == RC_OK)
     {
         gpioPort_e = c_InDigSigBspMap_as[f_signal_e].HwGpio_e;
-        Ret_e = s_FMKIO_Set_BspSigCfg(gpioPort_e,
-                                      c_InDigSigBspMap_as[f_signal_e].HwPin_e,
-                                      (t_uint32)FMKIO_BSP_MODE_INPUT,
-                                      f_pull_e,
-                                      FMKIO_SPD_MODE_LOW, // irrevelent for a input sig dig
-                                      FMKIO_AF_UNUSED);
+
+        Ret_e = FMKIO_GetGpioModeInput(&gpioModeInput_u32);
+        if(Ret_e == RC_OK)
+        {
+            Ret_e = s_FMKIO_Set_BspSigCfg(gpioPort_e,
+                                        c_InDigSigBspMap_as[f_signal_e].HwPin_e,
+                                        gpioModeInput_u32,
+                                        f_pull_e,
+                                        FMKIO_SPD_MODE_LOW, // irrevelent for a input sig dig
+                                        FMKIO_AF_UNUSED);
+        }
         if (Ret_e == RC_OK)
         {
             g_InDigSigInfo_as[f_signal_e].isConfigured_b = (t_bool)True;
@@ -605,6 +628,7 @@ t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e,
                                     t_cbFMKIO_SigErrorMngmt *f_sigErr_cb)
 {
     t_eReturnCode Ret_e = RC_OK;
+    t_uint32 gpioModeAna_u32;
 
     if (f_signal_e >= FMKIO_INPUT_SIGANA_NB)
     {
@@ -624,12 +648,16 @@ t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e,
     }
     else
     {
-        Ret_e = s_FMKIO_Set_BspSigCfg(c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwGpio_e,
-                                      c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwPin_e,
-                                      (t_uint32)FMKIO_BSP_MODE_ANALOG,
-                                      FMKIO_PULL_MODE_DISABLE, // no pull resistance in analog
-                                      FMKIO_SPD_MODE_LOW, // irrevelent for a input sig dig
-                                      FMKIO_AF_UNUSED);
+        Ret_e = FMKIO_GetGpioModeAnalog(&gpioModeAna_u32);
+        if(Ret_e == RC_OK)
+        {
+            Ret_e = s_FMKIO_Set_BspSigCfg(c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwGpio_e,
+                                        c_InAnaSigBspMap_as[f_signal_e].BasicCfg_s.HwPin_e,
+                                        gpioModeAna_u32,
+                                        FMKIO_PULL_MODE_DISABLE, // no pull resistance in analog
+                                        FMKIO_SPD_MODE_LOW, // irrevelent for a input sig dig
+                                        FMKIO_AF_UNUSED);
+        }
         if (Ret_e == RC_OK)
         { // configure the adc
             Ret_e = FMKCDA_Set_AdcChannelCfg(c_InAnaSigBspMap_as[f_signal_e].adc_e,
@@ -667,7 +695,6 @@ t_eReturnCode FMKIO_Set_InAnaSigCfg(t_eFMKIO_InAnaSig f_signal_e,
  *********************************/
 t_eReturnCode FMKIO_Set_InFreqSigCfg(   t_eFMKIO_InFreqSig f_signal_e, 
                                         t_eFMKIO_SigTrigCptr f_trigger_e,
-                                        t_eFMKIO_FreqMeas f_freqMeas_e,
                                         t_float32 f_samplingHz_f32,
                                         t_cbFMKIO_SigErrorMngmt *f_sigErr_cb)
 {
@@ -675,9 +702,8 @@ t_eReturnCode FMKIO_Set_InFreqSigCfg(   t_eFMKIO_InFreqSig f_signal_e,
     t_eFMKTIM_ChnlMeasTrigger cpu_trigger_e = FMKTIM_LINE_MEAS_NB;
     t_eFMKTIM_InterruptLineIO ITLineIO_e;
 
-    if (f_signal_e >= FMKIO_INPUT_SIGFREQ_NB 
-    || f_trigger_e >= FMKIO_STC_NB 
-    || f_freqMeas_e >= FMKIO_FREQ_MEAS_NB)
+    if ((f_signal_e >= FMKIO_INPUT_SIGFREQ_NB )
+    || (f_trigger_e >= FMKIO_STC_NB))
     {
         Ret_e = RC_ERROR_PARAM_INVALID;
         ASSERT((t_uint16)Ret_e);
@@ -721,13 +747,12 @@ t_eReturnCode FMKIO_Set_InFreqSigCfg(   t_eFMKIO_InFreqSig f_signal_e,
             Ret_e = FMKTIM_Set_ICLineCfg(ITLineIO_e,
                                         cpu_trigger_e,
                                         f_samplingHz_f32,
-                                        (t_cbFMKTIM_InterruptLine *)s_FMKIO_MngSigFrequency);
+                                        (t_cbFMKTIM_InterruptLine *)s_FMKIO_MngSigFrequencyCb);
         }
         if (Ret_e == RC_OK)
         { // update info
             g_InFreqSigInfo_as[f_signal_e].isConfigured_b = (t_bool)True;
             g_InFreqSigInfo_as[f_signal_e].rqsTimerLineOpe_b = TRUE;
-            g_InFreqSigInfo_as[f_signal_e].meas_e = f_freqMeas_e;
             g_InFreqSigInfo_as[f_signal_e].edgeTrig_e = f_trigger_e;
             g_InFreqSigInfo_as[f_signal_e].sigError_cb = f_sigErr_cb;
             
@@ -1877,11 +1902,12 @@ t_eReturnCode FMKIO_Get_InDigSigValue(t_eFMKIO_InDigSig f_signal_e, t_eFMKIO_Dig
     }
     if (Ret_e == RC_OK)
     {
-        Ret_e = FMKIO_Get_BspGpioPort(c_InDigSigBspMap_as[f_signal_e].HwGpio_e, &bspGpio_ps);
+        Ret_e = s_FMKIO_Get_BspDigValue(c_InDigSigBspMap_as[f_signal_e].HwGpio_e,
+                                        c_InDigSigBspMap_as[f_signal_e].HwPin_e,
+                                        &bspSigValue_e);
         if (Ret_e == RC_OK)
         {
-            bspSigValue_e = HAL_GPIO_ReadPin(bspGpio_ps, c_BspPinMapping_ua16[c_InDigSigBspMap_as[f_signal_e].HwPin_e]);
-             switch (bspSigValue_e)
+            switch (bspSigValue_e)
             {
             case GPIO_PIN_RESET:
                 *f_value_pe = FMKIO_DIG_VALUE_LOW;
@@ -1951,11 +1977,12 @@ t_eReturnCode FMKIO_Get_InAnaSigValue(t_eFMKIO_InAnaSig f_signal_e, t_float32 *f
 /*********************************
  * FMKIO_Get_InFreqSigValue
  *********************************/
-t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 *f_value_pf32)
+t_eReturnCode FMKIO_Get_InFreqSigValue( t_eFMKIO_InFreqSig f_signal_e,
+                                        t_eFMKIO_FreqMeas f_measType_e,
+                                        t_float32 *f_value_pf32)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_sFMKIO_InFreqSigInfo freqSigInfo_s;
-    t_uint32 value_u32 = (t_uint32)0;
     t_uint32 arrTim_u32 = (t_uint32)0;
     t_float32 timFreqHz_f32 = (t_float32)0.f;
 
@@ -1995,52 +2022,78 @@ t_eReturnCode FMKIO_Get_InFreqSigValue(t_eFMKIO_InFreqSig f_signal_e, t_float32 
     }
     if (Ret_e == RC_OK)
     {
-        value_u32 = freqSigInfo_s.value_u32;
         arrTim_u32 = freqSigInfo_s.TimARRValue_u32;
         timFreqHz_f32 = freqSigInfo_s.timFreqHzVal_f32;
 
-        switch (freqSigInfo_s.meas_e)
+        switch (f_measType_e)
         {
             case FMKIO_FREQ_MEAS_COUNT:
-                *f_value_pf32 = (t_float32)(t_uint32)value_u32;
+            {
+                *f_value_pf32 = freqSigInfo_s.counterVal_u32;
                 // On remet à zéro les valeurs dans la structure et on écrit la mise à jour
-                freqSigInfo_s.value_u32 = 0;
+                freqSigInfo_s.counterVal_u32 = 0;
                 Ret_e = SMB_Write(&g_sfmb_FreqInfo_as[f_signal_e], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
                 if (Ret_e != RC_OK)
                 {
                     ASSERT((t_uint16)Ret_e);
                     return Ret_e;
                 }
-                break;
-
+            }
+            break;
             case FMKIO_FREQ_MEAS_PERIOD:
+            {
+                t_float32 deltaCapture_f32 = (t_float32)freqSigInfo_s.deltaCaptureVal_u32;
                 if (arrTim_u32 > 0)
                 {
-                    *f_value_pf32 = (t_float32)((t_float32)((t_float32)value_u32) 
+                    *f_value_pf32 = (t_float32)((deltaCapture_f32) 
                                                             / (t_float32)(arrTim_u32 * timFreqHz_f32));
                 }
                 else
                 {
                     *f_value_pf32 = 0.0f;
                 }
-                break;
-
+            }
+            break;
             case FMKIO_FREQ_MEAS_FREQ:
+            {
+                t_float32 deltaCapture_f32 = (t_float32)freqSigInfo_s.deltaCaptureVal_u32;
                 //--- no division by 0 but not overload with compution 
                 //          whenever value is 0 and will give 0 at the end ----//
-                if (value_u32 > (t_uint32)0
+                if (deltaCapture_f32 > (t_float32)0.0F
                 && (arrTim_u32 > (t_uint32)0))
                 {
                     *f_value_pf32 = (t_float32)((t_float32)arrTim_u32 
-                                                / (t_float32)((t_float32)value_u32)
-                                                * (t_float32)timFreqHz_f32);
+                                                / deltaCapture_f32
+                                                * timFreqHz_f32);
                 }
                 else
                 {
                     *f_value_pf32 = 0.0f;
                 }
-                break;
-
+            }
+            break;
+            case FMKIO_FREQ_MEAS_DIGITAL:
+            {
+                GPIO_PinState bspPinValue_e;
+                //---- when user wants the logic level, we check the signal here ----//
+                Ret_e = s_FMKIO_Get_BspDigValue(c_InFreqSigBspMap_as[f_signal_e].BasicCfg_s.HwGpio_e,
+                                                c_InFreqSigBspMap_as[f_signal_e].BasicCfg_s.HwPin_e,
+                                                &bspPinValue_e);
+                if(Ret_e == RC_OK)
+                {
+                    *f_value_pf32 = (t_float32)bspPinValue_e;
+                }
+                else
+                {
+                    *f_value_pf32 = 0.0F;
+                }
+            }
+            break;
+            case FMKIO_FREQ_MEAS_DUTYCYCLE:
+            {
+                Ret_e = RC_ERROR_NOT_SUPPORTED;
+            }
+            break;
             case FMKIO_FREQ_MEAS_NB:
             default:
                 Ret_e = RC_ERROR_NOT_SUPPORTED;
@@ -2644,9 +2697,9 @@ static t_eReturnCode s_FMKIO_FastTask_AnaSigMngmt(void)
     return Ret_e;
 }
 /*********************************
- * s_FMKIO_MngSigFrequency
+ * s_FMKIO_MngSigFrequencyCb
  *********************************/
-static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_InterruptType_e, t_uint8 f_InterruptLine_u8)
+static void s_FMKIO_MngSigFrequencyCb(t_eFMKTIM_InterruptLineType f_InterruptType_e, t_uint8 f_InterruptLine_u8)
 {
     t_eReturnCode Ret_e = RC_OK;
     t_sFMKTIM_ICValue IcLineValues_s;
@@ -2661,10 +2714,9 @@ static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_Inter
 
     if (f_InterruptType_e != FMKTIM_INTERRUPT_LINE_TYPE_IO)
     {
-        Ret_e = RC_ERROR_PARAM_INVALID;
+        ASSERT((t_uint16)0);
     }
-
-    if (Ret_e == RC_OK)
+    else
     {
         // Trouver le signal à partir de la ligne d’interruption
         for (LLI_u8 = 0; LLI_u8 < FMKIO_INPUT_SIGFREQ_NB; LLI_u8++)
@@ -2682,53 +2734,46 @@ static t_eReturnCode s_FMKIO_MngSigFrequency(t_eFMKTIM_InterruptLineType f_Inter
             Ret_e = SMB_Read(&g_sfmb_FreqInfo_as[freqSig_e], &freqSigInfo_s, sizeof(t_sFMKIO_InFreqSigInfo));
             if (Ret_e != RC_OK)
             {
-                return Ret_e;
+                return;
             }
 
-            switch (freqSigInfo_s.meas_e)
+            //---- 1- update counter value ----//
+            freqSigInfo_s.counterVal_u32 = (t_uint32)(freqSigInfo_s.counterVal_u32 + 1);
+
+            //---- 2- update frequency ----//
+            ItLine_u8 = f_InterruptLine_u8;
+            SETBIT_8B(maskEvnt_u8, FMKTIM_BIT_IC_CCRX_REGISTER);
+            Ret_e = FMKTIM_Get_ICLineValue(ItLine_u8, &IcLineValues_s, maskEvnt_u8);
+            if (Ret_e < RC_OK)
             {
-                case FMKIO_FREQ_MEAS_COUNT:
-                    freqSigInfo_s.value_u32 += 1;
-                    break;
-
-                case FMKIO_FREQ_MEAS_PERIOD:
-                case FMKIO_FREQ_MEAS_FREQ:
-                    ItLine_u8 = f_InterruptLine_u8;
-                    SETBIT_8B(maskEvnt_u8, FMKTIM_BIT_IC_CCRX_REGISTER);
-                    Ret_e = FMKTIM_Get_ICLineValue(ItLine_u8, &IcLineValues_s, maskEvnt_u8);
-
-                    if (Ret_e == RC_OK)
-                    {
-                        currentCapture_u32 = IcLineValues_s.CCRxRegister_u16;
-                        lastCapture_u32 = freqSigInfo_s.lastCaptureVal_u32;
-
-                        // Calcul différence en tenant compte d’un éventuel overflow
-                        if (currentCapture_u32 < lastCapture_u32)
-                        {
-                            captureDifference_u32 = (t_uint32)((freqSigInfo_s.TimARRValue_u32 - lastCapture_u32)
-                                                   + currentCapture_u32 + 1);
-                        }
-                        else
-                        {
-                            captureDifference_u32 = currentCapture_u32 - lastCapture_u32;
-                        }
-                    }
-
-                    freqSigInfo_s.value_u32 = captureDifference_u32;
-                    freqSigInfo_s.lastCaptureVal_u32 = currentCapture_u32;
-            
-                    if (Ret_e < RC_OK)
-                    {
-                        ASSERT((t_uint16)Ret_e);
-                        return Ret_e;
-                    }
-                    break;
-
-                case FMKIO_FREQ_MEAS_NB:
-                default:
-                    Ret_e = RC_WARNING_NO_OPERATION;
-                    break;
+                ASSERT((t_uint16)Ret_e);
+                return;
             }
+            else
+            {
+                currentCapture_u32 = IcLineValues_s.CCRxRegister_u16;
+                lastCapture_u32 = freqSigInfo_s.lastCaptureVal_u32;
+
+                // Calcul différence en tenant compte d’un éventuel overflow
+                if (currentCapture_u32 < lastCapture_u32)
+                {
+                    captureDifference_u32 = (t_uint32)((freqSigInfo_s.TimARRValue_u32 - lastCapture_u32)
+                                            + currentCapture_u32 + 1);
+                }
+                else
+                {
+                    captureDifference_u32 = currentCapture_u32 - lastCapture_u32;
+                }
+
+                freqSigInfo_s.deltaCaptureVal_u32 = captureDifference_u32;
+
+                //---- 3- update dutycycle ----//
+            
+                //---- 4- update last capture ----//
+                freqSigInfo_s.lastCaptureVal_u32 = currentCapture_u32;
+            }
+            
+            
         }
         else
         {
@@ -3117,6 +3162,42 @@ static t_eReturnCode s_FMKIO_Set_GpioClkState(t_eFMKIO_GpioPort f_gpioPort_e, t_
             g_IsGpioClockEnable_ae[f_gpioPort_e] = f_ope_e;
         }
     }
+    return Ret_e;
+}
+
+/*********************************
+ * s_FMKIO_Get_BspDigValue
+ *********************************/
+static t_eReturnCode s_FMKIO_Get_BspDigValue(   t_eFMKIO_GpioPort f_bspPort_e,
+                                                t_eFMKIO_BspGpioPin f_bspPin_e,
+                                                GPIO_PinState * f_bspState_pe)
+{
+    t_eReturnCode Ret_e;
+    GPIO_TypeDef *bspGpio_ps = (GPIO_TypeDef *)NULL;
+    GPIO_PinState bspSigValue_e;
+
+    if((f_bspPin_e >= FMKIO_GPIO_PIN_NB)
+    || (f_bspPort_e >= FMKIO_GPIO_PORT_NB))
+    {
+        Ret_e = RC_ERROR_PARAM_INVALID;
+        ASSERT((t_uint16)0);
+    }
+    else if(f_bspState_pe == NULL)
+    {
+        Ret_e = RC_ERROR_PTR_NULL;
+        ASSERT((t_uint16)0);
+    }
+    else 
+    {
+        Ret_e = FMKIO_Get_BspGpioPort(f_bspPort_e, &bspGpio_ps);
+        if (Ret_e == RC_OK)
+        {
+            bspSigValue_e = HAL_GPIO_ReadPin(   bspGpio_ps,
+                                                c_BspPinMapping_ua16[f_bspPin_e]); 
+            *f_bspState_pe = bspSigValue_e;
+        }
+    }
+
     return Ret_e;
 }
 

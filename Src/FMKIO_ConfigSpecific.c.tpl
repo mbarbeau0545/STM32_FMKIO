@@ -90,7 +90,7 @@ t_eReturnCode FMKIO_Get_BspGpioPort(t_eFMKIO_GpioPort f_GpioPort_e, GPIO_TypeDef
             /* CAUTION : Automatic generated code section for GPIO switch case: End */
             case FMKIO_GPIO_PORT_NB:
             default:
-                Ret_e = RC_WARNING_NO_OPERATION;
+                Ret_e = RC_ERROR_WRONG_RESULT;
                 break;
         }
     }
